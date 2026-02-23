@@ -1,13 +1,21 @@
 #include "player.h"
 #include "raylib.h"
 #include "raymath.h"
-#include "rlgl.h" // Include rlgl for matrix transformations
+#include "rlgl.h" 
 #include "camera3d.h" 
 #include <algorithm> 
 
+// Helper to interpolate angles correctly (handling wrap-around)
+float LerpAngle(float start, float end, float amount) {
+    float difference = end - start;
+    while (difference < -180) difference += 360;
+    while (difference > 180) difference -= 360;
+    return start + difference * amount;
+}
+
 // Player constructor
 Player::Player() {
-    position = (Vector3){ 0.0f, 0.5f, 0.0f }; // Start on the ground
+    position = (Vector3){ 0.0f, 0.5f, 0.0f }; 
     velocity = (Vector3){ 0.0f, 0.0f, 0.0f };
     baseSpeed = 12.0f; 
     sprintSpeedMultiplier = 3.0f; 
@@ -27,6 +35,7 @@ Player::Player() {
     faithMeter = 100.0f; 
     maxFaith = 100.0f;    
     radius = 0.5f; 
+    rotationY = 0.0f;
 
     isShieldActive = false;
     shieldTimer = 0.0f;
@@ -42,6 +51,7 @@ void Player::Update(Camera3D_Custom& camera) {
     float dt = GetFrameTime();
     Vector3 input = { 0.0f, 0.0f, 0.0f };
 
+    // Update timers
     if (dashTimer > 0) dashTimer -= dt;
     if (dashEffectTimer > 0) dashEffectTimer -= dt;
     if (shieldTimer > 0) {
@@ -49,65 +59,81 @@ void Player::Update(Camera3D_Custom& camera) {
         if (shieldTimer <= 0) isShieldActive = false;
     }
     if (shieldCooldown > 0) shieldCooldown -= dt;
-
     if (swingTimer > 0) {
         swingTimer -= dt;
         if (swingTimer <= 0) isSwinging = false;
     }
 
+    // Handle Faith Shield (Q)
     if (IsKeyPressed(KEY_Q) && shieldCooldown <= 0) {
         isShieldActive = true;
         shieldTimer = shieldDuration;
         shieldCooldown = 8.0f; 
     }
 
+    // Handle sprinting
     if (IsKeyDown(KEY_LEFT_SHIFT)) {
         currentSpeed = baseSpeed * sprintSpeedMultiplier;
     } else {
         currentSpeed = baseSpeed;
     }
 
+    // Get camera vectors
     Vector3 cameraForward = camera.GetForward();
     Vector3 cameraRight = Vector3CrossProduct(cameraForward, (Vector3){0.0f, 1.0f, 0.0f});
     cameraRight = Vector3Normalize(cameraRight);
 
+    // Handle input (WASD) relative to camera
     if (IsKeyDown(KEY_W)) input = Vector3Add(input, cameraForward);
     if (IsKeyDown(KEY_S)) input = Vector3Subtract(input, cameraForward);
     if (IsKeyDown(KEY_A)) input = Vector3Subtract(input, cameraRight);
     if (IsKeyDown(KEY_D)) input = Vector3Add(input, cameraRight);
 
-    if (Vector3Length(input) > 0.1f) {
+    // Normalize input
+    bool isMoving = Vector3Length(input) > 0.1f;
+    if (isMoving) {
         input = Vector3Normalize(input);
     }
 
+    // --- Rotation Logic ---
+    // If attacking (Swinging staff or firing beam), face camera forward
+    if (isSwinging || IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+        float targetRotation = atan2f(cameraForward.x, cameraForward.z) * RAD2DEG;
+        rotationY = LerpAngle(rotationY, targetRotation, 20.0f * dt); // Snappy rotation for combat
+    }
+    // Else if moving, face movement direction
+    else if (isMoving) {
+        float targetRotation = atan2f(input.x, input.z) * RAD2DEG;
+        rotationY = LerpAngle(rotationY, targetRotation, 10.0f * dt); // Smooth rotation for traversal
+    }
+
+    // Horizontal Movement
     Vector3 targetHorizontalVelocity = Vector3Scale(input, currentSpeed);
     if (dashEffectTimer <= 0.0f) {
         velocity.x = Lerp(velocity.x, targetHorizontalVelocity.x, 10.0f * dt);
         velocity.z = Lerp(velocity.z, targetHorizontalVelocity.z, 10.0f * dt);
 
-        if (Vector3LengthSqr(input) < 0.01f) { 
+        if (!isMoving) { 
             velocity.x = Lerp(velocity.x, 0.0f, 15.0f * dt); 
             velocity.z = Lerp(velocity.z, 0.0f, 15.0f * dt);
         }
     }
 
+    // Vertical Physics
     float gravity = 22.0f; 
     if (!isGrounded) {
-        float currentGravity = gravity;
-        if (velocity.y > 0 && !IsKeyDown(KEY_SPACE)) {
-            currentGravity *= 1.5f; 
-        }
+        float curGrav = gravity;
+        if (velocity.y > 0 && !IsKeyDown(KEY_SPACE)) curGrav *= 1.5f; 
 
         if (IsKeyDown(KEY_SPACE) && velocity.y < 0) { 
             isGliding = true;
-            velocity.y -= currentGravity * dt * glideGravityMultiplier;
+            velocity.y -= curGrav * dt * glideGravityMultiplier;
             velocity.x = Lerp(velocity.x, targetHorizontalVelocity.x * 1.5f, 5.0f * dt);
             velocity.z = Lerp(velocity.z, targetHorizontalVelocity.z * 1.5f, 5.0f * dt);
         } else {
             isGliding = false;
-            velocity.y -= currentGravity * dt; 
+            velocity.y -= curGrav * dt; 
         }
-        
         if (velocity.y < -30.0f) velocity.y = -30.0f;
     } else {
         velocity.y = 0.0f; 
@@ -126,13 +152,11 @@ void Player::Update(Camera3D_Custom& camera) {
         }
     }
 
+    // Dash
     if (IsKeyPressed(KEY_C) && dashTimer <= 0) {
-        Vector3 dashDirection = input; 
-        if (Vector3Length(dashDirection) < 0.1f) dashDirection = cameraForward; 
-        dashDirection = Vector3Normalize(dashDirection);
-
-        velocity.x = dashDirection.x * dashPower;
-        velocity.z = dashDirection.z * dashPower;
+        Vector3 dashDir = isMoving ? input : cameraForward;
+        velocity.x = dashDir.x * dashPower;
+        velocity.z = dashDir.z * dashPower;
         dashTimer = dashCooldown;
         dashEffectTimer = 0.2f; 
     }
@@ -141,98 +165,82 @@ void Player::Update(Camera3D_Custom& camera) {
 
     if (position.y < 0.5f) { 
         position.y = 0.5f;
-        if (!isGrounded) { 
-            isGrounded = true;
-            canDoubleJump = true;
-            isGliding = false;
-        }
+        if (!isGrounded) { isGrounded = true; canDoubleJump = true; isGliding = false; }
     } else {
         isGrounded = false;
     }
 }
 
-// Helper to draw rotated cube
-void DrawCubeRotated(Vector3 position, Vector3 size, Vector3 rotationAxis, float rotationAngle, Color color) {
+// Draw player
+void Player::Draw(Camera3D_Custom& camera) {
+    // We'll use rlgl to rotate the entire model based on rotationY
     rlPushMatrix();
     rlTranslatef(position.x, position.y, position.z);
-    rlRotatef(rotationAngle, rotationAxis.x, rotationAxis.y, rotationAxis.z);
-    DrawCube({0,0,0}, size.x, size.y, size.z, color);
-    rlPopMatrix();
-}
-
-// Draw player - Enhanced "Hyperrealistic" (Detailed) Model using Standard Primitives + rlgl
-void Player::Draw(Camera3D_Custom& camera) {
-    Vector3 forward = camera.GetForward();
-    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3){0, 1, 0}));
+    rlRotatef(rotationY, 0, 1, 0);
 
     Color robeColor = DARKBLUE;
     Color skinColor = BEIGE;
     Color goldTrim = GOLD;
 
     // --- Body ---
-    // Using standard primitives, no DrawCylinderEx
-    DrawCylinder(Vector3Subtract(position, {0, 0.5f, 0}), 0.6f, 0.6f, 0.8f, 8, robeColor);
-    DrawCylinderWires(Vector3Subtract(position, {0, 0.5f, 0}), 0.6f, 0.6f, 0.8f, 8, DARKGRAY);
-    DrawCylinder(Vector3Add(position, {0, 0.3f, 0}), 0.5f, 0.5f, 0.7f, 8, robeColor);
-    DrawCylinder(Vector3Add(position, {0, 0.25f, 0}), 0.52f, 0.52f, 0.1f, 8, goldTrim);
+    DrawCylinder({0, -0.5f, 0}, 0.6f, 0.6f, 0.8f, 8, robeColor);
+    DrawCylinderWires({0, -0.5f, 0}, 0.6f, 0.6f, 0.8f, 8, DARKGRAY);
+    DrawCylinder({0, 0.3f, 0}, 0.5f, 0.5f, 0.7f, 8, robeColor);
+    DrawCylinder({0, 0.25f, 0}, 0.52f, 0.52f, 0.1f, 8, goldTrim);
 
-    // --- Head & Hood ---
-    Vector3 headPos = Vector3Add(position, {0, 1.1f, 0});
-    DrawSphere(headPos, 0.25f, skinColor);
-    DrawSphere(Vector3Add(headPos, {0, 0.05f, 0}), 0.28f, robeColor);
+    // --- Head ---
+    DrawSphere({0, 1.1f, 0}, 0.25f, skinColor);
+    DrawSphere({0, 1.15f, 0}, 0.28f, robeColor); // Hood
     
-    // --- Limbs ---
-    Vector3 leftShoulder = Vector3Subtract(Vector3Add(position, {0, 0.9f, 0}), Vector3Scale(right, 0.3f));
-    Vector3 rightShoulder = Vector3Add(Vector3Add(position, {0, 0.9f, 0}), Vector3Scale(right, 0.3f));
-    
+    // --- Eyes (Facing forward in local space) ---
+    DrawSphere({0.1f, 1.15f, 0.2f}, 0.05f, BLACK);
+    DrawSphere({-0.1f, 1.15f, 0.2f}, 0.05f, BLACK);
+
+    // --- Arms ---
+    // In local space, forward is +Z
+    Vector3 leftShoulder = {-0.3f, 0.9f, 0};
+    Vector3 rightShoulder = {0.3f, 0.9f, 0};
     DrawSphere(leftShoulder, 0.15f, robeColor);
     DrawSphere(rightShoulder, 0.15f, robeColor);
     
-    Vector3 leftHand = Vector3Add(leftShoulder, {0, -0.4f, 0.2f});
+    Vector3 leftHand = {-0.3f, 0.5f, 0.2f};
+    DrawCylinderEx(leftShoulder, leftHand, 0.12f, 0.1f, 6, robeColor);
     DrawSphere(leftHand, 0.1f, skinColor);
 
-    // Right arm holds staff
-    Vector3 rightHand = Vector3Add(rightShoulder, {0, -0.3f, 0.3f});
+    Vector3 rightHand = {0.3f, 0.6f, 0.3f};
     if (isSwinging) rightHand.y += 0.2f;
+    DrawCylinderEx(rightShoulder, rightHand, 0.12f, 0.1f, 6, robeColor);
     DrawSphere(rightHand, 0.1f, skinColor);
 
     // --- Halo ---
-    // Approximated with a flat cylinder (disk) since DrawTorus is missing
-    Vector3 haloPos = Vector3Add(headPos, {0, 0.4f, 0});
-    DrawCylinder(haloPos, 0.2f, 0.2f, 0.02f, 16, Fade(GOLD, 0.3f));
-    DrawCylinderWires(haloPos, 0.2f, 0.2f, 0.02f, 16, Fade(GOLD, 0.8f));
+    DrawCylinder({0, 1.5f, 0}, 0.2f, 0.2f, 0.02f, 16, Fade(GOLD, 0.3f));
+    DrawCylinderWires({0, 1.5f, 0}, 0.2f, 0.2f, 0.02f, 16, Fade(GOLD, 0.8f));
 
-    // --- The Glorious Staff (Detailed) ---
+    // --- The Glorious Staff ---
     rlPushMatrix();
     rlTranslatef(rightHand.x, rightHand.y, rightHand.z);
     
-    // Calculate rotation based on camera yaw
-    float playerRotY = atan2f(forward.x, forward.z) * RAD2DEG;
-    rlRotatef(playerRotY, 0, 1, 0); // Face forward
-
-    // Swing animation
     if (isSwinging) {
         float t = 1.0f - (swingTimer / 0.3f); 
         float sweepAngle = sinf(t * PI) * 120.0f;
-        rlRotatef(sweepAngle, 0, 1, 0); // Sweep around Y
-        rlRotatef(-30.0f, 1, 0, 0); // Tilt forward
+        rlRotatef(sweepAngle, 0, 1, 0); 
+        rlRotatef(-30.0f, 1, 0, 0); 
     } else {
-        rlRotatef(10.0f, 1, 0, 0); // Idle tilt
+        rlRotatef(10.0f, 1, 0, 0); 
     }
 
-    // Staff Geometry (Local Space)
     DrawCylinder({0, -0.5f, 0}, 0.04f, 0.04f, 2.0f, 8, DARKBROWN);
     DrawSphere({0, 1.5f, 0}, 0.15f, GOLD);
     DrawSphereWires({0, 1.5f, 0}, 0.18f, 8, 8, Fade(WHITE, 0.8f));
-    // Cross
     DrawCube({0, 1.7f, 0}, 0.05f, 0.25f, 0.05f, WHITE);
     DrawCube({0, 1.75f, 0}, 0.2f, 0.05f, 0.05f, WHITE);
-
     rlPopMatrix();
+
+    rlPopMatrix(); // End character rotation
 
     // --- Faith Shield ---
     if (isShieldActive) {
-        DrawSphereWires(position, 1.2f, 10, 10, Fade(SKYBLUE, 0.6f));
+        DrawSphereWires(position, 1.2f, 6, 8, Fade(SKYBLUE, 0.6f));
         DrawSphere(position, 1.15f, Fade(BLUE, 0.15f));
     }
 }

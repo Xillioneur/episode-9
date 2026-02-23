@@ -26,7 +26,8 @@ public:
 
     float faithMeter;
     float maxFaith;
-    float radius; // For collision detection
+    float radius; 
+    float rotationY; // Character rotation angle in degrees
 
     // Faith Shield
     bool isShieldActive;
