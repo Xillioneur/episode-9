@@ -103,4 +103,26 @@ public:
     void Draw() override;
 };
 
+// Boss Types
+typedef enum BossType {
+    PRIDE,
+    DESPAIR,
+    DEATH
+} BossType;
+
+// Boss Class
+class Boss : public Enemy {
+public:
+    BossType type;
+    float actionTimer;
+    float summonTimer;
+    int phase; // 1, 2, 3
+
+    Boss(Vector3 startPos, BossType bossType, AudioManager& am);
+    ~Boss() = default;
+
+    void Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) override;
+    void Draw() override;
+};
+
 #endif // ENEMY_H

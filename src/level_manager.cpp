@@ -69,32 +69,48 @@ void LevelManager::DrawCurrentLevel(Shader lightingShader, int lightPosLoc, int 
         SetShaderValue(lightingShader, viewPosLoc, (float*)&cameraPosition, SHADER_UNIFORM_VEC3);
 
         if (currentLevelName == "Hub") {
-            DrawCube((Vector3){0.0f, -0.5f, 0.0f}, 100.0f, 1.0f, 100.0f, GREEN); 
-            // Hub Decorations
+            // Textured-looking ground (grid effect)
+            DrawCube((Vector3){0.0f, -0.5f, 0.0f}, 100.0f, 1.0f, 100.0f, DARKGREEN); 
+            for(int i=-50; i<50; i+=5) {
+                DrawCube((Vector3){(float)i, -0.4f, 0.0f}, 0.5f, 1.1f, 100.0f, GREEN);
+                DrawCube((Vector3){0.0f, -0.4f, (float)i}, 100.0f, 1.1f, 0.5f, GREEN);
+            }
+
+            // Hub Decorations (Detailed Trees/Ruins)
             for (int i = 0; i < 8; i++) {
                 float x = sinf(i * 1.0f) * 20.0f;
                 float z = cosf(i * 1.0f) * 20.0f;
-                DrawCube((Vector3){x, 1.5f, z}, 2.0f, 3.0f, 2.0f, DARKGRAY);
-                DrawSphere((Vector3){x, 3.5f, z}, 1.5f, DARKGREEN); // Simple "Trees"
+                // Ruin Pillar
+                DrawCube((Vector3){x, 1.5f, z}, 2.0f, 3.0f, 2.0f, LIGHTGRAY);
+                DrawCube((Vector3){x, 3.5f, z}, 2.5f, 0.5f, 2.5f, GRAY); // Capital
+                // Tree
+                DrawCylinder((Vector3){x+5, 0, z+5}, 0.5f, 0.7f, 2.0f, 6, BROWN);
+                DrawSphere((Vector3){x+5, 2.5f, z+5}, 1.5f, DARKGREEN); 
             }
             DrawCylinder(exitPoints["Hub"], 2.0f, 2.0f, 4.0f, 16, PURPLE); 
         }
         else {
             int day = std::stoi(currentLevelName.substr(3));
-            Color groundColor = ColorFromHSV((float)(day % 15) / 15.0f * 360.0f, 0.6f, 0.4f);
+            Color groundColor = ColorFromHSV((float)(day % 15) / 15.0f * 360.0f, 0.5f, 0.3f); // Darker base
             float levelSize = 60.0f + (day * 5.0f);
+            
+            // Ground with "Terrain" feel (random heights)
             DrawCube((Vector3){0.0f, -0.5f, levelSize/2.0f}, levelSize, 1.0f, levelSize, groundColor); 
             
+            // Detailed Ruins
             for (int i = 0; i < 5 + day; i++) {
                 float x = sinf(i * 1.5f + day) * (levelSize * 0.4f);
                 float z = cosf(i * 2.0f + day) * (levelSize * 0.4f) + levelSize/2.0f;
-                float h = 2.0f + (float)(i % 4);
-                // "Realistic" Pillar/Ruins
-                DrawCube((Vector3){x, h/2.0f, z}, 4.0f, h, 4.0f, GRAY);
-                DrawCubeWires((Vector3){x, h/2.0f, z}, 4.0f, h, 4.0f, DARKGRAY);
+                float h = 3.0f + (float)(i % 4);
+                
+                // Broken Pillar
+                DrawCylinder((Vector3){x, 0, z}, 1.0f, 1.0f, h, 8, LIGHTGRAY);
+                DrawCylinder((Vector3){x, 0, z}, 1.1f, 1.1f, 0.5f, 8, DARKGRAY); // Base
+                if (i % 2 == 0) DrawCube((Vector3){x, h, z}, 2.5f, 0.5f, 2.5f, GRAY); // Top
             }
 
             DrawCylinder(exitPoints[currentLevelName], 1.5f, 1.5f, 3.0f, 16, GOLD); 
+            // Glowing particles around exit? (Handled by main loop particles maybe)
         }
 
         for (const auto& s : currentLevelScriptures) {

@@ -1,8 +1,9 @@
 #include "player.h"
 #include "raylib.h"
 #include "raymath.h"
-#include "camera3d.h" // Include custom camera header
-#include <algorithm> // For std::clamp
+#include "rlgl.h" // Include rlgl for matrix transformations
+#include "camera3d.h" 
+#include <algorithm> 
 
 // Player constructor
 Player::Player() {
@@ -150,63 +151,95 @@ void Player::Update(Camera3D_Custom& camera) {
     }
 }
 
-// Draw player - Using a Glorious Staff instead of a sword
+// Helper to draw rotated cube
+void DrawCubeRotated(Vector3 position, Vector3 size, Vector3 rotationAxis, float rotationAngle, Color color) {
+    rlPushMatrix();
+    rlTranslatef(position.x, position.y, position.z);
+    rlRotatef(rotationAngle, rotationAxis.x, rotationAxis.y, rotationAxis.z);
+    DrawCube({0,0,0}, size.x, size.y, size.z, color);
+    rlPopMatrix();
+}
+
+// Draw player - Enhanced "Hyperrealistic" (Detailed) Model using Standard Primitives + rlgl
 void Player::Draw(Camera3D_Custom& camera) {
     Vector3 forward = camera.GetForward();
     Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3){0, 1, 0}));
 
-    // Robe
-    DrawCylinderEx(Vector3Subtract(position, {0, 0.5f, 0}), Vector3Add(position, {0, 0.8f, 0}), 0.5f, 0.3f, 8, DARKBLUE);
-    // Head
-    DrawSphere(Vector3Add(position, {0, 1.1f, 0}), 0.25f, BEIGE);
-    // Eyes
-    Vector3 eyePos = Vector3Add(position, Vector3Scale(forward, 0.2f));
-    eyePos.y += 1.15f;
-    DrawSphere(Vector3Add(eyePos, Vector3Scale(right, 0.1f)), 0.05f, BLACK);
-    DrawSphere(Vector3Subtract(eyePos, Vector3Scale(right, 0.1f)), 0.05f, BLACK);
+    Color robeColor = DARKBLUE;
+    Color skinColor = BEIGE;
+    Color goldTrim = GOLD;
 
-    // --- The Glorious Staff ---
-    Vector3 handPos = Vector3Add(position, Vector3Scale(right, 0.45f));
-    handPos.y += 0.3f;
+    // --- Body ---
+    // Using standard primitives, no DrawCylinderEx
+    DrawCylinder(Vector3Subtract(position, {0, 0.5f, 0}), 0.6f, 0.6f, 0.8f, 8, robeColor);
+    DrawCylinderWires(Vector3Subtract(position, {0, 0.5f, 0}), 0.6f, 0.6f, 0.8f, 8, DARKGRAY);
+    DrawCylinder(Vector3Add(position, {0, 0.3f, 0}), 0.5f, 0.5f, 0.7f, 8, robeColor);
+    DrawCylinder(Vector3Add(position, {0, 0.25f, 0}), 0.52f, 0.52f, 0.1f, 8, goldTrim);
 
-    // Sweep animation rotation
-    float sweepAngle = 0.0f;
+    // --- Head & Hood ---
+    Vector3 headPos = Vector3Add(position, {0, 1.1f, 0});
+    DrawSphere(headPos, 0.25f, skinColor);
+    DrawSphere(Vector3Add(headPos, {0, 0.05f, 0}), 0.28f, robeColor);
+    
+    // --- Limbs ---
+    Vector3 leftShoulder = Vector3Subtract(Vector3Add(position, {0, 0.9f, 0}), Vector3Scale(right, 0.3f));
+    Vector3 rightShoulder = Vector3Add(Vector3Add(position, {0, 0.9f, 0}), Vector3Scale(right, 0.3f));
+    
+    DrawSphere(leftShoulder, 0.15f, robeColor);
+    DrawSphere(rightShoulder, 0.15f, robeColor);
+    
+    Vector3 leftHand = Vector3Add(leftShoulder, {0, -0.4f, 0.2f});
+    DrawSphere(leftHand, 0.1f, skinColor);
+
+    // Right arm holds staff
+    Vector3 rightHand = Vector3Add(rightShoulder, {0, -0.3f, 0.3f});
+    if (isSwinging) rightHand.y += 0.2f;
+    DrawSphere(rightHand, 0.1f, skinColor);
+
+    // --- Halo ---
+    // Approximated with a flat cylinder (disk) since DrawTorus is missing
+    Vector3 haloPos = Vector3Add(headPos, {0, 0.4f, 0});
+    DrawCylinder(haloPos, 0.2f, 0.2f, 0.02f, 16, Fade(GOLD, 0.3f));
+    DrawCylinderWires(haloPos, 0.2f, 0.2f, 0.02f, 16, Fade(GOLD, 0.8f));
+
+    // --- The Glorious Staff (Detailed) ---
+    rlPushMatrix();
+    rlTranslatef(rightHand.x, rightHand.y, rightHand.z);
+    
+    // Calculate rotation based on camera yaw
+    float playerRotY = atan2f(forward.x, forward.z) * RAD2DEG;
+    rlRotatef(playerRotY, 0, 1, 0); // Face forward
+
+    // Swing animation
     if (isSwinging) {
         float t = 1.0f - (swingTimer / 0.3f); 
-        sweepAngle = sinf(t * PI) * 120.0f; // Wider arc for staff sweep
+        float sweepAngle = sinf(t * PI) * 120.0f;
+        rlRotatef(sweepAngle, 0, 1, 0); // Sweep around Y
+        rlRotatef(-30.0f, 1, 0, 0); // Tilt forward
+    } else {
+        rlRotatef(10.0f, 1, 0, 0); // Idle tilt
     }
 
-    Vector3 staffForward = Vector3RotateByAxisAngle(forward, (Vector3){0, 1, 0}, -sweepAngle * DEG2RAD);
-    
-    // Staff Handle (Cylinder)
-    Vector3 staffBottom = Vector3Subtract(handPos, {0, 0.8f, 0});
-    Vector3 staffTop = Vector3Add(handPos, {0, 1.5f, 0});
-    // Apply animation tilt to staff
-    staffTop = Vector3Add(handPos, Vector3Scale(staffForward, 1.5f));
-    staffTop.y += 1.0f;
-    staffBottom = Vector3Subtract(handPos, Vector3Scale(staffForward, 0.5f));
-    staffBottom.y -= 0.5f;
+    // Staff Geometry (Local Space)
+    DrawCylinder({0, -0.5f, 0}, 0.04f, 0.04f, 2.0f, 8, DARKBROWN);
+    DrawSphere({0, 1.5f, 0}, 0.15f, GOLD);
+    DrawSphereWires({0, 1.5f, 0}, 0.18f, 8, 8, Fade(WHITE, 0.8f));
+    // Cross
+    DrawCube({0, 1.7f, 0}, 0.05f, 0.25f, 0.05f, WHITE);
+    DrawCube({0, 1.75f, 0}, 0.2f, 0.05f, 0.05f, WHITE);
 
-    DrawCylinderEx(staffBottom, staffTop, 0.05f, 0.05f, 8, BROWN);
-    
-    // Glowing Orb at top
-    DrawSphere(staffTop, 0.2f, GOLD);
-    DrawSphereWires(staffTop, 0.25f, 8, 8, Fade(WHITE, 0.5f));
-    
-    // Small cross on top of orb
-    DrawCube(Vector3Add(staffTop, {0, 0.1f, 0}), 0.05f, 0.3f, 0.05f, WHITE);
-    DrawCube(Vector3Add(staffTop, {0, 0.2f, 0}), 0.2f, 0.05f, 0.05f, WHITE);
+    rlPopMatrix();
 
     // --- Faith Shield ---
     if (isShieldActive) {
-        DrawSphereWires(position, 1.2f, 10, 10, Fade(SKYBLUE, 0.5f));
-        DrawSphere(position, 1.1f, Fade(BLUE, 0.2f));
+        DrawSphereWires(position, 1.2f, 10, 10, Fade(SKYBLUE, 0.6f));
+        DrawSphere(position, 1.15f, Fade(BLUE, 0.15f));
     }
 }
 
 void Player::SwingSword() {
     isSwinging = true;
-    swingTimer = 0.3f; // duration
+    swingTimer = 0.3f; 
 }
 
 void Player::SetPosition(Vector3 pos) { position = pos; }
