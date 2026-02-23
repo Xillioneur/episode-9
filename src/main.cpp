@@ -109,11 +109,12 @@ int main()
                     enemy->Update(GetFrameTime(), player, levelManager, particleSystem); 
                 }
 
-                glorySystem.Update(GetFrameTime(), customCamera, player.GetPosition(), enemies);
+                // Updated GlorySystem Update call
+                glorySystem.Update(GetFrameTime(), customCamera, player, enemies);
+                
                 particleSystem.Update(GetFrameTime());
                 levelManager.UpdateCurrentLevel(GetFrameTime(), player);
 
-                // Only remove enemies when they are fully banished (animation done)
                 enemies.erase(std::remove_if(enemies.begin(), enemies.end(),
                                              [](const std::unique_ptr<Enemy>& e){ return e->ReadyToRemove(); }),
                               enemies.end());
@@ -121,33 +122,26 @@ int main()
                 lightPosition.x = 10.0f * sin(GetTime());
                 lightPosition.z = 10.0f * cos(GetTime());
 
-                // Check for Game Over (Faith Depleted)
                 if (player.faithMeter <= 0) {
                     currentScreen = GAMEOVER;
                     EnableCursor(); 
                 }
 
-                // Interaction Logic (Exits and Scriptures)
-                
-                // Check Level Exits
                 Vector3 exitPos = levelManager.GetExitPosition(levelManager.currentLevelName);
                 float distToExit = Vector3Distance(player.GetPosition(), exitPos);
                 if (distToExit < 3.0f && IsKeyPressed(KEY_F)) {
                     if (levelManager.currentLevelName == "Hub") {
-                        // Enter the current day's level dynamically
                         std::string targetDay = "Day" + std::to_string(currentDay);
                         levelManager.LoadLevel(targetDay); 
                         player.SetPosition(levelManager.GetSpawnPoint(targetDay));
                         customCamera.InitCamera(player.GetPosition());
                         LoadLevelEnemies(targetDay, enemies, audioManager, currentDay);
                     } else {
-                        // Returning from a mission to the Hub
-                        currentScreen = VICTORY; // Transition to VICTORY screen first
+                        currentScreen = VICTORY;
                         EnableCursor();
                     }
                 }
 
-                // Check Scriptures
                 for (auto& s : levelManager.currentLevelScriptures) {
                     if (!s.found) {
                         float dist = Vector3Distance(player.GetPosition(), s.position);
@@ -160,7 +154,6 @@ int main()
                     }
                 }
 
-                // Save/Load
                 if (IsKeyPressed(KEY_F5)) {
                     GameData dataToSave;
                     dataToSave.playerPosition = player.GetPosition();
@@ -199,9 +192,8 @@ int main()
             case VICTORY:
             {
                 if (IsKeyPressed(KEY_SPACE)) {
-                    // Advance to next day AND return to Hub
                     currentDay++; 
-                    if (currentDay > 15) currentDay = 1; // Loop for now or handle end of game
+                    if (currentDay > 15) currentDay = 1; 
                     
                     levelManager.LoadLevel("Hub");
                     player.SetPosition(levelManager.GetSpawnPoint("Hub"));
@@ -287,7 +279,6 @@ void LoadLevelEnemies(const std::string& levelName, std::vector<std::unique_ptr<
         enemies.push_back(std::make_unique<ShadowDrone>((Vector3){-5.0f, 3.0f, -5.0f}, audioManager));
         enemies.push_back(std::make_unique<ShadowDrone>((Vector3){0.0f, 4.0f, -8.0f}, audioManager));
     } else {
-        // Dynamic enemy mix based on day
         int enemyCount = 3 + (currentDay * 2); 
         for (int i = 0; i < enemyCount; i++) {
             float angle = (float)i * (360.0f / enemyCount) * DEG2RAD;

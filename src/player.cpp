@@ -31,6 +31,9 @@ Player::Player() {
     shieldTimer = 0.0f;
     shieldCooldown = 0.0f;
     shieldDuration = 3.0f;
+
+    isSwinging = false;
+    swingTimer = 0.0f;
 }
 
 // Update player state
@@ -45,6 +48,11 @@ void Player::Update(Camera3D_Custom& camera) {
         if (shieldTimer <= 0) isShieldActive = false;
     }
     if (shieldCooldown > 0) shieldCooldown -= dt;
+
+    if (swingTimer > 0) {
+        swingTimer -= dt;
+        if (swingTimer <= 0) isSwinging = false;
+    }
 
     if (IsKeyPressed(KEY_Q) && shieldCooldown <= 0) {
         isShieldActive = true;
@@ -142,54 +150,63 @@ void Player::Update(Camera3D_Custom& camera) {
     }
 }
 
-// Draw player - Refined humanoid model with a sword
+// Draw player - Using a Glorious Staff instead of a sword
 void Player::Draw(Camera3D_Custom& camera) {
     Vector3 forward = camera.GetForward();
     Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3){0, 1, 0}));
 
-    // --- Humanoid Body (Robed Figure) ---
-    // Torso/Robe
+    // Robe
     DrawCylinderEx(Vector3Subtract(position, {0, 0.5f, 0}), Vector3Add(position, {0, 0.8f, 0}), 0.5f, 0.3f, 8, DARKBLUE);
     // Head
     DrawSphere(Vector3Add(position, {0, 1.1f, 0}), 0.25f, BEIGE);
-    // Eyes (indicator)
+    // Eyes
     Vector3 eyePos = Vector3Add(position, Vector3Scale(forward, 0.2f));
     eyePos.y += 1.15f;
     DrawSphere(Vector3Add(eyePos, Vector3Scale(right, 0.1f)), 0.05f, BLACK);
-    eyePos = Vector3Subtract(eyePos, Vector3Scale(right, 0.1f));
-    DrawSphere(eyePos, 0.05f, BLACK);
+    DrawSphere(Vector3Subtract(eyePos, Vector3Scale(right, 0.1f)), 0.05f, BLACK);
 
-    // --- The Sword ---
-    // Position sword relative to the player
+    // --- The Glorious Staff ---
     Vector3 handPos = Vector3Add(position, Vector3Scale(right, 0.45f));
-    handPos = Vector3Add(handPos, Vector3Scale(forward, 0.2f));
     handPos.y += 0.3f;
 
-    // Sword rotation (facing forward)
-    float rotation = camera.yaw; 
-    
-    // Blade
-    Vector3 bladePos = Vector3Add(handPos, Vector3Scale(forward, 0.8f));
-    bladePos.y += 0.2f;
-    // Draw blade as a long thin silver box
-    // We use DrawCubeEx or rotate it manually. Let's compose it.
-    // Blade
-    Vector3 bladeDir = Vector3Normalize(Vector3Subtract(Vector3Add(handPos, Vector3Scale(forward, 2.0f)), handPos));
-    for (float i = 0; i < 1.5f; i += 0.1f) {
-        DrawCube(Vector3Add(handPos, Vector3Scale(forward, i)), 0.05f, 0.1f + i*0.02f, 0.1f, LIGHTGRAY);
+    // Sweep animation rotation
+    float sweepAngle = 0.0f;
+    if (isSwinging) {
+        float t = 1.0f - (swingTimer / 0.3f); 
+        sweepAngle = sinf(t * PI) * 120.0f; // Wider arc for staff sweep
     }
+
+    Vector3 staffForward = Vector3RotateByAxisAngle(forward, (Vector3){0, 1, 0}, -sweepAngle * DEG2RAD);
     
-    // Hilt/Handle
-    DrawCube(handPos, 0.1f, 0.1f, 0.4f, BROWN);
-    // Crossguard
-    Vector3 guardPos = Vector3Add(handPos, Vector3Scale(forward, 0.2f));
-    DrawCube(guardPos, 0.5f, 0.1f, 0.1f, GOLD);
+    // Staff Handle (Cylinder)
+    Vector3 staffBottom = Vector3Subtract(handPos, {0, 0.8f, 0});
+    Vector3 staffTop = Vector3Add(handPos, {0, 1.5f, 0});
+    // Apply animation tilt to staff
+    staffTop = Vector3Add(handPos, Vector3Scale(staffForward, 1.5f));
+    staffTop.y += 1.0f;
+    staffBottom = Vector3Subtract(handPos, Vector3Scale(staffForward, 0.5f));
+    staffBottom.y -= 0.5f;
+
+    DrawCylinderEx(staffBottom, staffTop, 0.05f, 0.05f, 8, BROWN);
+    
+    // Glowing Orb at top
+    DrawSphere(staffTop, 0.2f, GOLD);
+    DrawSphereWires(staffTop, 0.25f, 8, 8, Fade(WHITE, 0.5f));
+    
+    // Small cross on top of orb
+    DrawCube(Vector3Add(staffTop, {0, 0.1f, 0}), 0.05f, 0.3f, 0.05f, WHITE);
+    DrawCube(Vector3Add(staffTop, {0, 0.2f, 0}), 0.2f, 0.05f, 0.05f, WHITE);
 
     // --- Faith Shield ---
     if (isShieldActive) {
         DrawSphereWires(position, 1.2f, 10, 10, Fade(SKYBLUE, 0.5f));
         DrawSphere(position, 1.1f, Fade(BLUE, 0.2f));
     }
+}
+
+void Player::SwingSword() {
+    isSwinging = true;
+    swingTimer = 0.3f; // duration
 }
 
 void Player::SetPosition(Vector3 pos) { position = pos; }

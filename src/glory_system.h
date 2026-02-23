@@ -30,7 +30,7 @@ public:
     float lightBladeArcAngle; // In degrees
 
     GlorySystem(ParticleSystem& ps, AudioManager& am); // Constructor now takes ParticleSystem and AudioManager reference
-    void Update(float dt, Camera3D_Custom& camera, Vector3 playerPosition, std::vector<std::unique_ptr<Enemy>>& enemies);
+    void Update(float dt, Camera3D_Custom& camera, Player& player, std::vector<std::unique_ptr<Enemy>>& enemies);
     void Draw(Camera3D_Custom& camera); // Pass camera for 3D drawing
 
 private:

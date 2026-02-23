@@ -42,6 +42,11 @@ public:
 
     void TakeDamage(float amount);
     void Heal(float amount);
+
+    // Sword Animation
+    bool isSwinging;
+    float swingTimer;
+    void SwingSword();
 };
 
 #endif // PLAYER_H
