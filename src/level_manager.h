@@ -26,6 +26,13 @@ struct Projectile {
     bool fromPlayer; 
 };
 
+struct Decoration {
+    Vector3 position;
+    float height;
+    float radius;
+    int type; // 0 for tree, 1 for crystal, 2 for pillar
+};
+
 typedef enum MissionType {
     BANISH_DOUBT, 
     RESTORE_LIGHT, 
@@ -33,33 +40,42 @@ typedef enum MissionType {
     BOSS_TRIAL     
 } MissionType;
 
+typedef enum Level {
+    HUB = 0,
+    DAY_1, DAY_2, DAY_3, DAY_4, DAY_5,
+    DAY_6, DAY_7, DAY_8, DAY_9, DAY_10,
+    DAY_11, DAY_12, DAY_13, DAY_14, DAY_15
+} Level;
+
 class LevelManager {
 public:
+    Level currentLevel;
     std::string currentLevelName;
     MissionType currentMissionType;
     int requiredScriptures;
     int scripturesFoundInLevel;
 
     std::vector<Scripture> currentLevelScriptures;
-    std::set<std::string> allFoundScriptureIDs; // Persists across level loads
+    std::set<std::string> allFoundScriptureIDs; 
     
     std::vector<Projectile> projectiles;
+    std::vector<Decoration> currentLevelDecorations;
 
     LevelManager();
 
-    void LoadLevel(const std::string& levelName);
+    void GoToLevel(Level level);
     void UnloadLevel();
     void UpdateCurrentLevel(float dt, Player& player);
     void DrawCurrentLevel(Shader lightingShader, int lightPosLoc, int viewPosLoc, Vector3 lightPosition, Vector3 cameraPosition);
 
     void AddProjectile(Vector3 pos, Vector3 vel, float rad, float life, bool fromP);
 
-    Vector3 GetSpawnPoint(const std::string& levelName);
-    Vector3 GetExitPosition(const std::string& levelName);
+    Vector3 GetSpawnPoint();
+    Vector3 GetExitPosition();
 
 private:
-    std::map<std::string, Vector3> spawnPoints; 
-    std::map<std::string, Vector3> exitPoints;  
+    std::map<Level, Vector3> spawnPoints; 
+    std::map<Level, Vector3> exitPoints;  
 };
 
 #endif // LEVEL_MANAGER_H

@@ -19,7 +19,7 @@ void InitializeNewGame(Player& player, std::vector<std::unique_ptr<Enemy>>& enem
                        LevelManager& levelManager, AudioManager& audioManager, int& currentDay);
 void LoadGameState(const GameData& loadedData, Player& player, std::vector<std::unique_ptr<Enemy>>& enemies,
                    LevelManager& levelManager, AudioManager& audioManager, int& currentDay);
-void LoadLevelEnemies(const std::string& levelName, std::vector<std::unique_ptr<Enemy>>& enemies, AudioManager& audioManager, int currentDay, MissionType type);
+void LoadLevelEnemies(Level level, std::vector<std::unique_ptr<Enemy>>& enemies, AudioManager& audioManager, int currentDay, MissionType type);
 
 const std::string DEFAULT_SAVE_FILE = "savegame.sav";
 
@@ -100,27 +100,25 @@ int main()
 
                 if (player.faithMeter <= 0) { currentScreen = GAMEOVER; EnableCursor(); }
 
-                // Interaction and Objectives
-                Vector3 exitPos = levelManager.GetExitPosition(levelManager.currentLevelName);
+                Vector3 exitPos = levelManager.GetExitPosition();
                 float distToExit = Vector3Distance(player.GetPosition(), exitPos);
                 
-                // --- Objective Logic ---
                 bool objectiveMet = false;
-                if (levelManager.currentLevelName == "Hub") objectiveMet = true;
+                if (levelManager.currentLevel == HUB) objectiveMet = true;
                 else {
                     if (levelManager.currentMissionType == BANISH_DOUBT) objectiveMet = enemies.empty();
                     else if (levelManager.currentMissionType == RESTORE_LIGHT) objectiveMet = (levelManager.scripturesFoundInLevel >= levelManager.requiredScriptures);
-                    else if (levelManager.currentMissionType == WALK_OF_FAITH) objectiveMet = true; // Just reach it
+                    else if (levelManager.currentMissionType == WALK_OF_FAITH) objectiveMet = true; 
                     else if (levelManager.currentMissionType == BOSS_TRIAL) objectiveMet = enemies.empty();
                 }
 
                 if (distToExit < 3.0f && IsKeyPressed(KEY_F)) {
-                    if (levelManager.currentLevelName == "Hub") {
-                        std::string targetDay = "Day" + std::to_string(currentDay);
-                        levelManager.LoadLevel(targetDay); 
-                        player.SetPosition(levelManager.GetSpawnPoint(targetDay));
+                    if (levelManager.currentLevel == HUB) {
+                        Level target = (Level)currentDay;
+                        levelManager.GoToLevel(target); 
+                        player.SetPosition(levelManager.GetSpawnPoint());
                         customCamera.InitCamera(player.GetPosition());
-                        LoadLevelEnemies(targetDay, enemies, audioManager, currentDay, levelManager.currentMissionType);
+                        LoadLevelEnemies(target, enemies, audioManager, currentDay, levelManager.currentMissionType);
                     } else if (objectiveMet) {
                         currentScreen = VICTORY;
                         EnableCursor();
@@ -155,10 +153,10 @@ int main()
             case GAMEOVER:
                 if (IsKeyPressed(KEY_R)) {
                     player.faithMeter = player.maxFaith;
-                    levelManager.LoadLevel("Hub");
-                    player.SetPosition(levelManager.GetSpawnPoint("Hub"));
+                    levelManager.GoToLevel(HUB);
+                    player.SetPosition(levelManager.GetSpawnPoint());
                     customCamera.InitCamera(player.GetPosition());
-                    LoadLevelEnemies("Hub", enemies, audioManager, currentDay, levelManager.currentMissionType);
+                    LoadLevelEnemies(HUB, enemies, audioManager, currentDay, levelManager.currentMissionType);
                     currentScreen = GAMEPLAY;
                     DisableCursor();
                 }
@@ -167,10 +165,10 @@ int main()
                 if (IsKeyPressed(KEY_SPACE)) {
                     currentDay++; 
                     if (currentDay > 15) currentDay = 1; 
-                    levelManager.LoadLevel("Hub");
-                    player.SetPosition(levelManager.GetSpawnPoint("Hub"));
+                    levelManager.GoToLevel(HUB);
+                    player.SetPosition(levelManager.GetSpawnPoint());
                     customCamera.InitCamera(player.GetPosition());
-                    LoadLevelEnemies("Hub", enemies, audioManager, currentDay, levelManager.currentMissionType);
+                    LoadLevelEnemies(HUB, enemies, audioManager, currentDay, levelManager.currentMissionType);
                     currentScreen = GAMEPLAY;
                     DisableCursor();
                 }
@@ -216,9 +214,9 @@ int main()
     return 0;
 }
 
-void LoadLevelEnemies(const std::string& levelName, std::vector<std::unique_ptr<Enemy>>& enemies, AudioManager& audioManager, int currentDay, MissionType type) {
+void LoadLevelEnemies(Level level, std::vector<std::unique_ptr<Enemy>>& enemies, AudioManager& audioManager, int currentDay, MissionType type) {
     enemies.clear();
-    if (levelName == "Hub") {
+    if (level == HUB) {
         enemies.push_back(std::make_unique<ShadowDrone>((Vector3){5.0f, 2.0f, 5.0f}, audioManager));
         enemies.push_back(std::make_unique<ShadowDrone>((Vector3){-5.0f, 3.0f, -5.0f}, audioManager));
     } else {
@@ -242,14 +240,16 @@ void LoadLevelEnemies(const std::string& levelName, std::vector<std::unique_ptr<
 }
 
 void InitializeNewGame(Player& player, std::vector<std::unique_ptr<Enemy>>& enemies, LevelManager& levelManager, AudioManager& audioManager, int& currentDay) {
-    player = Player(); levelManager.allFoundScriptureIDs.clear(); currentDay = 1; levelManager.LoadLevel("Hub");
-    player.SetPosition(levelManager.GetSpawnPoint(levelManager.currentLevelName));
-    LoadLevelEnemies("Hub", enemies, audioManager, currentDay, levelManager.currentMissionType);
+    player = Player(); levelManager.allFoundScriptureIDs.clear(); currentDay = 1; 
+    levelManager.GoToLevel(HUB);
+    player.SetPosition(levelManager.GetSpawnPoint());
+    LoadLevelEnemies(HUB, enemies, audioManager, currentDay, levelManager.currentMissionType);
 }
 
 void LoadGameState(const GameData& loadedData, Player& player, std::vector<std::unique_ptr<Enemy>>& enemies, LevelManager& levelManager, AudioManager& audioManager, int& currentDay) {
     player.SetPosition(loadedData.playerPosition); player.faithMeter = loadedData.playerFaith; currentDay = loadedData.currentDay;
     levelManager.allFoundScriptureIDs.clear();
     for (const auto& id : loadedData.collectedScriptureIDs) levelManager.allFoundScriptureIDs.insert(id);
-    levelManager.LoadLevel("Hub"); LoadLevelEnemies("Hub", enemies, audioManager, currentDay, levelManager.currentMissionType);
+    levelManager.GoToLevel(HUB); 
+    LoadLevelEnemies(HUB, enemies, audioManager, currentDay, levelManager.currentMissionType);
 }
