@@ -29,21 +29,31 @@ void HUD::DrawScripturePopup() {
         DrawRectangle(posX, posY, width, height, boxColor);
         DrawRectangleLines(posX, posY, width, height, textColor);
 
-        // Simple word wrap simulation (could be improved)
         DrawText(currentScriptureText.c_str(), posX + 20, posY + 20, 20, textColor);
     }
 }
 
 void HUD::Draw(float playerFaith, float playerMaxFaith, 
               float gloryBeamCD, float prayerBurstCD, float lightBladeCD, 
-              int currentDay, int enemiesLeft) {
+              int currentDay, int enemiesLeft, int missionType, int scripturesFound, int scripturesRequired) {
     // --- Faith Bar (Top-left) ---
     float faithBarWidth = 200;
     float faithBarHeight = 20;
     float faithRatio = playerFaith / playerMaxFaith;
-    DrawRectangle(10, 10, faithBarWidth, faithBarHeight, BLACK); // Background
-    DrawRectangle(10, 10, (int)(faithBarWidth * faithRatio), faithBarHeight, GREEN); // Fill
+    DrawRectangle(10, 10, faithBarWidth, faithBarHeight, BLACK); 
+    DrawRectangle(10, 10, (int)(faithBarWidth * faithRatio), faithBarHeight, GREEN); 
     DrawText(TextFormat("Faith: %.0f/%.0f", playerFaith, playerMaxFaith), 15, 12, 16, WHITE);
+
+    // --- Mission Objective (Top-center) ---
+    std::string objective = "";
+    if (missionType == 0) objective = "Objective: Banish all Shadows of Doubt (" + std::to_string(enemiesLeft) + " left)";
+    else if (missionType == 1) objective = "Objective: Restore the Light (" + std::to_string(scripturesFound) + "/" + std::to_string(scripturesRequired) + " Fragments)";
+    else if (missionType == 2) objective = "Objective: Walk the Path of Faith to the Altar";
+    else if (missionType == 3) objective = "Objective: Banish the Manifestation of Evil";
+
+    int objWidth = MeasureText(objective.c_str(), 20);
+    DrawRectangle(GetScreenWidth()/2 - objWidth/2 - 10, 10, objWidth + 20, 30, Fade(BLACK, 0.5f));
+    DrawText(objective.c_str(), GetScreenWidth()/2 - objWidth/2, 15, 20, GOLD);
 
     // --- Ability Cooldowns (Bottom-left) ---
     int abilityTextY = GetScreenHeight() - 70;
@@ -52,12 +62,8 @@ void HUD::Draw(float playerFaith, float playerMaxFaith,
     DrawText(TextFormat("E (Burst): %.1f", prayerBurstCD > 0 ? prayerBurstCD : 0), 10, abilityTextY + 40, 16, prayerBurstCD > 0 ? RED : LIME);
 
     // --- Day Counter (Top-right) ---
-    std::string dayText = "Day: " + std::to_string(currentDay);
+    std::string dayText = "Lenten Day: " + std::to_string(currentDay);
     DrawText(dayText.c_str(), GetScreenWidth() - MeasureText(dayText.c_str(), 20) - 10, 10, 20, BLACK);
-
-    // --- Enemies Left (Top-right, below Day Counter) ---
-    std::string enemiesText = "Enemies: " + std::to_string(enemiesLeft);
-    DrawText(enemiesText.c_str(), GetScreenWidth() - MeasureText(enemiesText.c_str(), 18) - 10, 35, 18, BLACK);
 
     // --- Crosshair (Center) ---
     int centerX = GetScreenWidth() / 2;
@@ -73,7 +79,6 @@ void HUD::DrawGameOver() {
     const char* title = "FAITH DEPLETED";
     const char* sub = "The shadows have momentarily clouded your path.";
     const char* hint = "Press R to Restart Day at Hub";
-    
     DrawText(title, GetScreenWidth()/2 - MeasureText(title, 40)/2, GetScreenHeight()/2 - 60, 40, WHITE);
     DrawText(sub, GetScreenWidth()/2 - MeasureText(sub, 20)/2, GetScreenHeight()/2, 20, LIGHTGRAY);
     DrawText(hint, GetScreenWidth()/2 - MeasureText(hint, 20)/2, GetScreenHeight()/2 + 60, 20, GOLD);
@@ -84,7 +89,6 @@ void HUD::DrawVictory(int dayCompleted) {
     const char* title = TextFormat("DAY %i TRIUMPHANT", dayCompleted);
     const char* sub = "Your light shines brighter than ever!";
     const char* hint = "Press SPACE to Return to Garden of Reflection";
-
     DrawText(title, GetScreenWidth()/2 - MeasureText(title, 40)/2, GetScreenHeight()/2 - 60, 40, DARKBLUE);
     DrawText(sub, GetScreenWidth()/2 - MeasureText(sub, 20)/2, GetScreenHeight()/2, 20, BLACK);
     DrawText(hint, GetScreenWidth()/2 - MeasureText(hint, 20)/2, GetScreenHeight()/2 + 60, 20, DARKPURPLE);

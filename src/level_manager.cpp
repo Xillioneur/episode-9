@@ -5,6 +5,9 @@
 
 LevelManager::LevelManager() {
     currentLevelName = "";
+    currentMissionType = BANISH_DOUBT;
+    requiredScriptures = 0;
+    scripturesFoundInLevel = 0;
 
     spawnPoints["Hub"] = (Vector3){0.0f, 0.5f, 0.0f}; 
     exitPoints["Hub"] = (Vector3){0.0f, 0.0f, -15.0f}; 
@@ -12,7 +15,10 @@ LevelManager::LevelManager() {
     for (int i = 1; i <= 15; i++) {
         std::string dayName = "Day" + std::to_string(i);
         spawnPoints[dayName] = (Vector3){0.0f, 0.5f, 0.0f};
-        exitPoints[dayName] = (Vector3){0.0f, 0.0f, 40.0f + (i * 2.0f)}; 
+        // Spread exit points more for variety
+        float angle = (float)i * 0.8f;
+        float dist = 40.0f + (i * 4.0f);
+        exitPoints[dayName] = (Vector3){sinf(angle) * 20.0f, 0.0f, dist}; 
     }
 }
 
@@ -20,29 +26,46 @@ void LevelManager::LoadLevel(const std::string& levelName) {
     currentLevelName = levelName;
     currentLevelScriptures.clear();
     projectiles.clear();
+    scripturesFoundInLevel = 0;
 
     if (levelName == "Hub") {
+        currentMissionType = WALK_OF_FAITH; 
         currentLevelScriptures.push_back({"hub_1", "John 1:5 - The light shines in the darkness.", {15.0f, 1.0f, -10.0f}, false});
     } else {
         int day = 1;
         if (levelName.length() > 3) day = std::stoi(levelName.substr(3));
+        
+        // Mission types cycle: Banish -> Restore -> Walk -> Banish -> Boss
+        if (day == 5 || day == 10 || day == 15) currentMissionType = BOSS_TRIAL;
+        else if (day % 3 == 1) currentMissionType = BANISH_DOUBT;
+        else if (day % 3 == 2) currentMissionType = RESTORE_LIGHT;
+        else currentMissionType = WALK_OF_FAITH;
 
-        if (day == 1) currentLevelScriptures.push_back({"day1_1", "Psalm 27:1 - The LORD is my light.", {0.0f, 1.0f, 25.0f}, false});
-        else if (day == 2) currentLevelScriptures.push_back({"day2_1", "Matthew 5:14 - Ye are the light of the world.", {10.0f, 1.0f, 10.0f}, false});
-        else if (day == 3) currentLevelScriptures.push_back({"day3_1", "Ephesians 5:8 - Walk as children of light.", {-10.0f, 1.0f, 20.0f}, false});
-        else if (day == 4) currentLevelScriptures.push_back({"day4_1", "1 John 1:7 - Walk in the light.", {5.0f, 1.0f, 30.0f}, false});
-        else if (day >= 5) currentLevelScriptures.push_back({"day_gen", "Lenten Virtue: Perseverance and Faith.", {0.0f, 1.0f, 15.0f + day}, false});
+        // scriptures
+        std::string text = "Scripture for Day " + std::to_string(day);
+        if (day == 1) text = "Psalm 27:1 - The LORD is my light.";
+        else if (day == 2) text = "Matthew 5:14 - Ye are the light of the world.";
+        else if (day == 3) text = "Ephesians 5:8 - Walk as children of light.";
+        else if (day == 15) text = "Easter: He is Risen! Glory to God!";
+
+        if (currentMissionType == RESTORE_LIGHT) {
+            requiredScriptures = 3;
+            for(int i=0; i<3; i++) {
+                float angle = (float)i * (360.0f/3.0f) * DEG2RAD;
+                currentLevelScriptures.push_back({"d" + std::to_string(day) + "_" + std::to_string(i), text, {cosf(angle)*15.0f, 1.0f, sinf(angle)*15.0f + 25.0f}, false});
+            }
+        } else {
+            requiredScriptures = 1;
+            currentLevelScriptures.push_back({"d" + std::to_string(day) + "_m", text, {0.0f, 1.0f, 20.0f}, false});
+        }
     }
 
     for (auto& s : currentLevelScriptures) {
         if (allFoundScriptureIDs.count(s.id)) s.found = true;
     }
-
-    TraceLog(LOG_INFO, "LEVEL: Loading level %s", levelName.c_str());
 }
 
 void LevelManager::UnloadLevel() {
-    TraceLog(LOG_INFO, "LEVEL: Unloading level %s", currentLevelName.c_str());
     currentLevelName = "";
     currentLevelScriptures.clear();
     projectiles.clear();
@@ -69,48 +92,41 @@ void LevelManager::DrawCurrentLevel(Shader lightingShader, int lightPosLoc, int 
         SetShaderValue(lightingShader, viewPosLoc, (float*)&cameraPosition, SHADER_UNIFORM_VEC3);
 
         if (currentLevelName == "Hub") {
-            // Textured-looking ground (grid effect)
-            DrawCube((Vector3){0.0f, -0.5f, 0.0f}, 100.0f, 1.0f, 100.0f, DARKGREEN); 
-            for(int i=-50; i<50; i+=5) {
-                DrawCube((Vector3){(float)i, -0.4f, 0.0f}, 0.5f, 1.1f, 100.0f, GREEN);
-                DrawCube((Vector3){0.0f, -0.4f, (float)i}, 100.0f, 1.1f, 0.5f, GREEN);
-            }
-
-            // Hub Decorations (Detailed Trees/Ruins)
-            for (int i = 0; i < 8; i++) {
-                float x = sinf(i * 1.0f) * 20.0f;
-                float z = cosf(i * 1.0f) * 20.0f;
-                // Ruin Pillar
-                DrawCube((Vector3){x, 1.5f, z}, 2.0f, 3.0f, 2.0f, LIGHTGRAY);
-                DrawCube((Vector3){x, 3.5f, z}, 2.5f, 0.5f, 2.5f, GRAY); // Capital
-                // Tree
-                DrawCylinder((Vector3){x+5, 0, z+5}, 0.5f, 0.7f, 2.0f, 6, BROWN);
-                DrawSphere((Vector3){x+5, 2.5f, z+5}, 1.5f, DARKGREEN); 
+            DrawCube((Vector3){0.0f, -0.5f, 0.0f}, 200.0f, 1.0f, 200.0f, DARKGREEN); 
+            for(int i=0; i<20; i++) {
+                float angle = i * 18.0f * DEG2RAD;
+                float dist = 50.0f;
+                DrawCylinder({cosf(angle)*dist, 0, sinf(angle)*dist}, 0.5f, 1.0f, 5.0f, 6, BROWN);
+                DrawSphere({cosf(angle)*dist, 5.5f, sinf(angle)*dist}, 3.0f, GREEN);
             }
             DrawCylinder(exitPoints["Hub"], 2.0f, 2.0f, 4.0f, 16, PURPLE); 
         }
         else {
             int day = std::stoi(currentLevelName.substr(3));
-            Color groundColor = ColorFromHSV((float)(day % 15) / 15.0f * 360.0f, 0.5f, 0.3f); // Darker base
-            float levelSize = 60.0f + (day * 5.0f);
+            float levelSize = 100.0f + (day * 5.0f);
             
-            // Ground with "Terrain" feel (random heights)
-            DrawCube((Vector3){0.0f, -0.5f, levelSize/2.0f}, levelSize, 1.0f, levelSize, groundColor); 
-            
-            // Detailed Ruins
+            // UNIQUE COLOR FOR EVERY DAY
+            Color groundColor = ColorFromHSV((float)((day * 24) % 360), 0.6f, 0.4f);
+            DrawCube({0, -0.5f, levelSize/2}, levelSize, 1.0f, levelSize, groundColor); 
+
+            // UNIQUE OBSTACLES PER DAY
             for (int i = 0; i < 5 + day; i++) {
                 float x = sinf(i * 1.5f + day) * (levelSize * 0.4f);
                 float z = cosf(i * 2.0f + day) * (levelSize * 0.4f) + levelSize/2.0f;
-                float h = 3.0f + (float)(i % 4);
+                float h = 3.0f + (float)(i % 5);
                 
-                // Broken Pillar
-                DrawCylinder((Vector3){x, 0, z}, 1.0f, 1.0f, h, 8, LIGHTGRAY);
-                DrawCylinder((Vector3){x, 0, z}, 1.1f, 1.1f, 0.5f, 8, DARKGRAY); // Base
-                if (i % 2 == 0) DrawCube((Vector3){x, h, z}, 2.5f, 0.5f, 2.5f, GRAY); // Top
+                if (day <= 5) { // Awakening
+                    DrawCylinder({x, 0, z}, 0.5f, 0.5f, h, 8, DARKGRAY);
+                    DrawCube({x, h, z}, 2.0f, 0.5f, 2.0f, GRAY);
+                } else if (day <= 10) { // Trials
+                    DrawCylinder({x, 0, z}, 0.1f, 1.5f, h, 4, SKYBLUE); // Crystals
+                } else { // Triumph
+                    DrawCube({x, 0, z}, 3, h, 3, GOLD);
+                    DrawCubeWires({x, 0, z}, 3, h, 3, WHITE);
+                }
             }
 
             DrawCylinder(exitPoints[currentLevelName], 1.5f, 1.5f, 3.0f, 16, GOLD); 
-            // Glowing particles around exit? (Handled by main loop particles maybe)
         }
 
         for (const auto& s : currentLevelScriptures) {

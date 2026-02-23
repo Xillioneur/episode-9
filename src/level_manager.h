@@ -5,11 +5,7 @@
 #include "raymath.h"
 #include <string>
 #include <vector>
-#include <map> // For storing spawn points
-
-// Forward declarations for shader related structs if needed, but in this case,
-// Shader is a raylib struct, so directly including "raylib.h" is fine.
-
+#include <map>
 #include <set>
 
 class Player; // Forward declaration
@@ -27,12 +23,23 @@ struct Projectile {
     float radius;
     float lifetime;
     bool active;
-    bool fromPlayer; // To distinguish between player and enemy projectiles
+    bool fromPlayer; 
 };
+
+typedef enum MissionType {
+    BANISH_DOUBT, 
+    RESTORE_LIGHT, 
+    WALK_OF_FAITH, 
+    BOSS_TRIAL     
+} MissionType;
 
 class LevelManager {
 public:
     std::string currentLevelName;
+    MissionType currentMissionType;
+    int requiredScriptures;
+    int scripturesFoundInLevel;
+
     std::vector<Scripture> currentLevelScriptures;
     std::set<std::string> allFoundScriptureIDs; // Persists across level loads
     
@@ -51,8 +58,8 @@ public:
     Vector3 GetExitPosition(const std::string& levelName);
 
 private:
-    std::map<std::string, Vector3> spawnPoints; // Store spawn points for levels
-    std::map<std::string, Vector3> exitPoints;  // Store exit/altar points for levels
+    std::map<std::string, Vector3> spawnPoints; 
+    std::map<std::string, Vector3> exitPoints;  
 };
 
 #endif // LEVEL_MANAGER_H

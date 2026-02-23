@@ -12,7 +12,7 @@ public:
     HUD();
     void Draw(float playerFaith, float playerMaxFaith, 
               float gloryBeamCD, float prayerBurstCD, float lightBladeCD, 
-              int currentDay, int enemiesLeft);
+              int currentDay, int enemiesLeft, int missionType, int scripturesFound, int scripturesRequired);
     
     void ShowScripture(const std::string& text);
     void DrawScripturePopup();
