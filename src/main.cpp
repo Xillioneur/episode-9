@@ -217,8 +217,19 @@ int main()
 void LoadLevelEnemies(Level level, std::vector<std::unique_ptr<Enemy>>& enemies, AudioManager& audioManager, int currentDay, MissionType type) {
     enemies.clear();
     if (level == HUB) {
-        enemies.push_back(std::make_unique<ShadowDrone>((Vector3){5.0f, 2.0f, 5.0f}, audioManager));
-        enemies.push_back(std::make_unique<ShadowDrone>((Vector3){-5.0f, 3.0f, -5.0f}, audioManager));
+        // --- Hub Sentinels Logic ---
+        // Day 7, 14, 15 are Safe Havens. All others have PLENTY of enemies.
+        bool isSafeHaven = (currentDay == 7 || currentDay == 14 || currentDay == 15);
+        if (!isSafeHaven) {
+            int hubEnemyCount = 4 + currentDay; 
+            for(int i=0; i<hubEnemyCount; i++) {
+                float a = (float)i * (360.0f / (float)hubEnemyCount) * DEG2RAD;
+                float dist = 15.0f + (float)(i % 3) * 5.0f; 
+                Vector3 p = { cosf(a) * dist, 0.5f, sinf(a) * dist };
+                if (i % 2 == 0) enemies.push_back(std::make_unique<Whisperer>(p, audioManager));
+                else enemies.push_back(std::make_unique<ShadowDrone>(Vector3Add(p, {0, 4.0f, 0}), audioManager));
+            }
+        }
     } else {
         if (type == BOSS_TRIAL) {
             BossType bt = PRIDE;
@@ -226,11 +237,11 @@ void LoadLevelEnemies(Level level, std::vector<std::unique_ptr<Enemy>>& enemies,
             else if (currentDay == 15) bt = DEATH;
             enemies.push_back(std::make_unique<Boss>((Vector3){0, 0, 30.0f}, bt, audioManager));
         } else {
-            int enemyCount = 3 + (currentDay); 
+            int enemyCount = 3 + currentDay; 
             for (int i = 0; i < enemyCount; i++) {
-                float angle = (float)i * (360.0f / enemyCount) * DEG2RAD;
+                float angle = (float)i * (360.0f / (float)enemyCount) * DEG2RAD;
                 float r = 15.0f + (float)currentDay;
-                Vector3 pos = { cosf(angle) * r, 0.5f, sinf(angle) * r + 20.0f };
+                Vector3 pos = { cosf(angle) * r, 0.5f, sinf(angle) * r + 25.0f };
                 if (i % 3 == 0 && currentDay >= 3) enemies.push_back(std::make_unique<TemptationBeast>(pos, audioManager));
                 else if (i % 2 == 0) enemies.push_back(std::make_unique<Whisperer>(pos, audioManager));
                 else enemies.push_back(std::make_unique<ShadowDrone>((Vector3){pos.x, 4.0f, pos.z}, audioManager));

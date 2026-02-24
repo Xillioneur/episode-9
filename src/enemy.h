@@ -54,6 +54,7 @@ public:
     void TakeGloryHit(float damage);
     bool IsBanished(); // Returns true if doubt <= 0
     bool ReadyToRemove(); // Returns true if animation complete
+    void HandlePlayerCollision(Player& player, float dt);
 
 protected: // Make audioManager protected so derived classes can access it
     AudioManager& audioManager;

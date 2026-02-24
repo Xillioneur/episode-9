@@ -36,6 +36,7 @@ Player::Player() {
     maxFaith = 100.0f;    
     radius = 0.5f; 
     rotationY = 0.0f;
+    knockbackTimer = 0.0f;
 
     isShieldActive = false;
     shieldTimer = 0.0f;
@@ -54,6 +55,8 @@ void Player::Update(Camera3D_Custom& camera) {
     // Update timers
     if (dashTimer > 0) dashTimer -= dt;
     if (dashEffectTimer > 0) dashEffectTimer -= dt;
+    if (knockbackTimer > 0) knockbackTimer -= dt;
+
     if (shieldTimer > 0) {
         shieldTimer -= dt;
         if (shieldTimer <= 0) isShieldActive = false;
@@ -83,11 +86,13 @@ void Player::Update(Camera3D_Custom& camera) {
     Vector3 cameraRight = Vector3CrossProduct(cameraForward, (Vector3){0.0f, 1.0f, 0.0f});
     cameraRight = Vector3Normalize(cameraRight);
 
-    // Handle input (WASD) relative to camera
-    if (IsKeyDown(KEY_W)) input = Vector3Add(input, cameraForward);
-    if (IsKeyDown(KEY_S)) input = Vector3Subtract(input, cameraForward);
-    if (IsKeyDown(KEY_A)) input = Vector3Subtract(input, cameraRight);
-    if (IsKeyDown(KEY_D)) input = Vector3Add(input, cameraRight);
+    // Handle input (WASD) - Skip if in knockback
+    if (knockbackTimer <= 0) {
+        if (IsKeyDown(KEY_W)) input = Vector3Add(input, cameraForward);
+        if (IsKeyDown(KEY_S)) input = Vector3Subtract(input, cameraForward);
+        if (IsKeyDown(KEY_A)) input = Vector3Subtract(input, cameraRight);
+        if (IsKeyDown(KEY_D)) input = Vector3Add(input, cameraRight);
+    }
 
     // Normalize input
     bool isMoving = Vector3Length(input) > 0.1f;
@@ -96,20 +101,25 @@ void Player::Update(Camera3D_Custom& camera) {
     }
 
     // --- Rotation Logic ---
-    // If attacking (Swinging staff or firing beam), face camera forward
     if (isSwinging || IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
         float targetRotation = atan2f(cameraForward.x, cameraForward.z) * RAD2DEG;
-        rotationY = LerpAngle(rotationY, targetRotation, 20.0f * dt); // Snappy rotation for combat
+        rotationY = LerpAngle(rotationY, targetRotation, 20.0f * dt); 
     }
-    // Else if moving, face movement direction
     else if (isMoving) {
         float targetRotation = atan2f(input.x, input.z) * RAD2DEG;
-        rotationY = LerpAngle(rotationY, targetRotation, 10.0f * dt); // Smooth rotation for traversal
+        rotationY = LerpAngle(rotationY, targetRotation, 10.0f * dt); 
     }
 
     // Horizontal Movement
     Vector3 targetHorizontalVelocity = Vector3Scale(input, currentSpeed);
-    if (dashEffectTimer <= 0.0f) {
+    
+    if (dashEffectTimer > 0.0f) {
+        // Dash is active, maintain dash velocity
+    } else if (knockbackTimer > 0.0f) {
+        // Knockback is active, friction applies
+        velocity.x = Lerp(velocity.x, 0.0f, 2.0f * dt);
+        velocity.z = Lerp(velocity.z, 0.0f, 2.0f * dt);
+    } else {
         velocity.x = Lerp(velocity.x, targetHorizontalVelocity.x, 10.0f * dt);
         velocity.z = Lerp(velocity.z, targetHorizontalVelocity.z, 10.0f * dt);
 
@@ -140,7 +150,8 @@ void Player::Update(Camera3D_Custom& camera) {
         canDoubleJump = true; 
     }
 
-    if (IsKeyPressed(KEY_SPACE)) {
+    // Jump
+    if (IsKeyPressed(KEY_SPACE) && knockbackTimer <= 0) {
         if (isGrounded) {
             velocity.y = jumpStrength;
             isGrounded = false;
@@ -153,7 +164,7 @@ void Player::Update(Camera3D_Custom& camera) {
     }
 
     // Dash
-    if (IsKeyPressed(KEY_C) && dashTimer <= 0) {
+    if (IsKeyPressed(KEY_C) && dashTimer <= 0 && knockbackTimer <= 0) {
         Vector3 dashDir = isMoving ? input : cameraForward;
         velocity.x = dashDir.x * dashPower;
         velocity.z = dashDir.z * dashPower;
@@ -173,40 +184,35 @@ void Player::Update(Camera3D_Custom& camera) {
 
 // Draw player
 void Player::Draw(Camera3D_Custom& camera) {
-    // We'll use rlgl to rotate the entire model based on rotationY
     rlPushMatrix();
     rlTranslatef(position.x, position.y, position.z);
     rlRotatef(rotationY, 0, 1, 0);
 
-    Color robeColor = DARKBLUE;
+    Color robeColor = (knockbackTimer > 0) ? RED : DARKBLUE;
     Color skinColor = BEIGE;
     Color goldTrim = GOLD;
 
     // --- Body ---
     DrawCylinder({0, -0.5f, 0}, 0.6f, 0.6f, 0.8f, 8, robeColor);
-    DrawCylinderWires({0, -0.5f, 0}, 0.6f, 0.6f, 0.8f, 8, DARKGRAY);
     DrawCylinder({0, 0.3f, 0}, 0.5f, 0.5f, 0.7f, 8, robeColor);
     DrawCylinder({0, 0.25f, 0}, 0.52f, 0.52f, 0.1f, 8, goldTrim);
 
     // --- Head ---
     DrawSphere({0, 1.1f, 0}, 0.25f, skinColor);
-    DrawSphere({0, 1.15f, 0}, 0.28f, robeColor); // Hood
+    DrawSphere({0, 1.15f, 0}, 0.28f, robeColor); 
     
-    // --- Eyes (Facing forward in local space) ---
+    // --- Eyes ---
     DrawSphere({0.1f, 1.15f, 0.2f}, 0.05f, BLACK);
     DrawSphere({-0.1f, 1.15f, 0.2f}, 0.05f, BLACK);
 
     // --- Arms ---
-    // In local space, forward is +Z
     Vector3 leftShoulder = {-0.3f, 0.9f, 0};
     Vector3 rightShoulder = {0.3f, 0.9f, 0};
     DrawSphere(leftShoulder, 0.15f, robeColor);
     DrawSphere(rightShoulder, 0.15f, robeColor);
-    
     Vector3 leftHand = {-0.3f, 0.5f, 0.2f};
     DrawCylinderEx(leftShoulder, leftHand, 0.12f, 0.1f, 6, robeColor);
     DrawSphere(leftHand, 0.1f, skinColor);
-
     Vector3 rightHand = {0.3f, 0.6f, 0.3f};
     if (isSwinging) rightHand.y += 0.2f;
     DrawCylinderEx(rightShoulder, rightHand, 0.12f, 0.1f, 6, robeColor);
@@ -219,7 +225,6 @@ void Player::Draw(Camera3D_Custom& camera) {
     // --- The Glorious Staff ---
     rlPushMatrix();
     rlTranslatef(rightHand.x, rightHand.y, rightHand.z);
-    
     if (isSwinging) {
         float t = 1.0f - (swingTimer / 0.3f); 
         float sweepAngle = sinf(t * PI) * 120.0f;
@@ -228,7 +233,6 @@ void Player::Draw(Camera3D_Custom& camera) {
     } else {
         rlRotatef(10.0f, 1, 0, 0); 
     }
-
     DrawCylinder({0, -0.5f, 0}, 0.04f, 0.04f, 2.0f, 8, DARKBROWN);
     DrawSphere({0, 1.5f, 0}, 0.15f, GOLD);
     DrawSphereWires({0, 1.5f, 0}, 0.18f, 8, 8, Fade(WHITE, 0.8f));
@@ -236,7 +240,7 @@ void Player::Draw(Camera3D_Custom& camera) {
     DrawCube({0, 1.75f, 0}, 0.2f, 0.05f, 0.05f, WHITE);
     rlPopMatrix();
 
-    rlPopMatrix(); // End character rotation
+    rlPopMatrix(); 
 
     // --- Faith Shield ---
     if (isShieldActive) {

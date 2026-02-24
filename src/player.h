@@ -29,6 +29,8 @@ public:
     float radius; 
     float rotationY; // Character rotation angle in degrees
 
+    float knockbackTimer; // To prevent input from overriding knockback
+
     // Faith Shield
     bool isShieldActive;
     float shieldTimer;
