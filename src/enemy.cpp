@@ -41,16 +41,16 @@ bool Enemy::ReadyToRemove() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// ShadowDrone Implementation
+// ShadowDrone Implementation (Modified: Hitscan Beam)
 // ---------------------------------------------------------------------------------------------
 
 ShadowDrone::ShadowDrone(Vector3 startPos, AudioManager& am)
-    : Enemy(startPos, 100.0f, 7.0f, 15.0f, 0.5f, am) { 
+    : Enemy(startPos, 100.0f, 8.0f, 20.0f, 0.5f, am) { 
     hoverAmplitude = 0.5f;
     hoverSpeed = 2.0f;
-    attackRange = 10.0f; 
+    attackRange = 15.0f; 
     state = IDLE; 
-    shootCooldown = 2.5f; 
+    shootCooldown = 2.0f; 
     shootTimer = 0.0f;
 }
 
@@ -85,15 +85,28 @@ void ShadowDrone::Update(float dt, Player& player, LevelManager& levelManager, P
         position = Vector3Add(position, Vector3Scale(push, (radius + player.radius) - dist));
     }
 
+    // Hitscan Beam Logic
     if (shootTimer > 0) shootTimer -= dt;
     if (dist < detectionRange && shootTimer <= 0) {
-        Vector3 shootDir = Vector3Normalize(toPlayer);
-        levelManager.AddProjectile(position, Vector3Scale(shootDir, 12.0f), 0.2f, 3.0f, false);
-        shootTimer = shootCooldown;
-        audioManager.PlaySFX("enemy_attack", position);
+        // Particle charge effect
+        particleSystem.Emit(position, 5, RED, ORANGE, 0.1f, 0.2f, 0.1f, 0.3f, (Vector3){-0.5f,-0.5f,-0.5f}, (Vector3){0.5f,0.5f,0.5f});
+        
+        if (shootTimer < -0.5f) { // 0.5s windup
+            Vector3 shootDir = Vector3Normalize(toPlayer);
+            Ray ray = { position, shootDir };
+            RayCollision col = GetRayCollisionSphere(ray, playerPos, player.radius);
+            if (col.hit && col.distance < detectionRange) {
+                player.TakeDamage(12.0f);
+                for(float i=0; i<col.distance; i+=1.0f) {
+                    particleSystem.Emit(Vector3Add(position, Vector3Scale(shootDir, i)), 1, RED, YELLOW, 0.1f, 0.2f, 0.1f, 0.2f, (Vector3){0,0,0}, (Vector3){0,0,0});
+                }
+            }
+            shootTimer = shootCooldown;
+            audioManager.PlaySFX("enemy_attack", position);
+        }
     }
 
-    float targetHeight = 3.5f;
+    float targetHeight = 4.0f;
 
     switch (state) {
         case IDLE:
@@ -104,21 +117,19 @@ void ShadowDrone::Update(float dt, Player& player, LevelManager& levelManager, P
         case CHASE: {
             Vector3 targetPos = { playerPos.x, targetHeight, playerPos.z };
             Vector3 moveDir = Vector3Normalize(Vector3Subtract(targetPos, position));
-            position = Vector3Add(position, Vector3Scale(moveDir, speed * dt));
-            if (dist < 8.0f) {
-                state = ATTACK; 
-                stateTimer = 3.0f;
-            }
+            moveDir = Vector3Add(moveDir, Vector3Scale(Vector3CrossProduct(moveDir, {0,1,0}), sinf(GetTime()*2)*0.5f));
+            position = Vector3Add(position, Vector3Scale(Vector3Normalize(moveDir), speed * dt));
+            if (dist < 10.0f) { state = ATTACK; stateTimer = 3.0f; }
         } break;
 
         case ATTACK: {
             Vector3 dir = Vector3Normalize(toPlayer);
             Vector3 right = Vector3CrossProduct(dir, (Vector3){0, 1, 0});
-            Vector3 moveVec = Vector3Scale(right, speed * 0.6f * dt);
-            if (dist > 10.0f) moveVec = Vector3Add(moveVec, Vector3Scale(dir, speed * 0.4f * dt));
-            if (dist < 6.0f) moveVec = Vector3Subtract(moveVec, Vector3Scale(dir, speed * 0.4f * dt));
+            Vector3 moveVec = Vector3Scale(right, speed * 0.8f * dt);
+            if (dist > 12.0f) moveVec = Vector3Add(moveVec, Vector3Scale(dir, speed * 0.5f * dt));
+            if (dist < 8.0f) moveVec = Vector3Subtract(moveVec, Vector3Scale(dir, speed * 0.5f * dt));
             position = Vector3Add(position, moveVec);
-            position.y = Lerp(position.y, targetHeight + sinf(GetTime() * 1.5f) * 0.5f, 2.0f * dt);
+            position.y = (playerPos.y + 4.0f) + sinf(GetTime() * 2.0f) * 1.0f;
             if (stateTimer <= 0) state = CHASE;
         } break;
         default: break;
@@ -133,10 +144,8 @@ void ShadowDrone::Draw() {
         return;
     }
     Color color = (flashTimer > 0) ? WHITE : ((doubtMeter < maxDoubt / 2) ? PURPLE : DARKPURPLE);
-    
     DrawSphere(position, radius, color);
     DrawSphereWires(position, radius, 6, 6, BLACK);
-    
     float wingOffset = sinf(GetTime() * 15.0f) * 0.2f;
     DrawCube(Vector3Add(position, {0.6f, wingOffset, 0}), 0.8f, 0.1f, 0.4f, color);
     DrawCube(Vector3Subtract(position, {0.6f, -wingOffset, 0}), 0.8f, 0.1f, 0.4f, color);
@@ -151,8 +160,8 @@ void ShadowDrone::Draw() {
 // ---------------------------------------------------------------------------------------------
 
 Whisperer::Whisperer(Vector3 startPos, AudioManager& am)
-    : Enemy(startPos, 60.0f, 9.0f, 12.0f, 0.5f, am) { 
-    chargeCooldown = 3.5f; 
+    : Enemy(startPos, 60.0f, 11.0f, 15.0f, 0.5f, am) { 
+    chargeCooldown = 2.5f; 
     chargeTimer = 0.0f;
     state = IDLE;
 }
@@ -202,33 +211,28 @@ void Whisperer::Update(float dt, Player& player, LevelManager& levelManager, Par
         case CHASE: {
             Vector3 target = { playerPos.x, position.y, playerPos.z };
             Vector3 dir = Vector3Normalize(Vector3Subtract(target, position));
-            if (dist2D < 6.0f && stateTimer > 0) {
-                Vector3 right = Vector3CrossProduct(dir, (Vector3){0, 1, 0});
-                dir = Vector3Add(dir, Vector3Scale(right, 0.5f));
-            }
-            position = Vector3Add(position, Vector3Scale(Vector3Normalize(dir), speed * dt));
-            if (dist2D < 2.5f && chargeTimer <= 0) {
+            position = Vector3Add(position, Vector3Scale(dir, speed * dt));
+            if (dist2D < 4.0f && chargeTimer <= 0) {
                 state = ATTACK;
-                chargeTimer = 0.6f; 
+                chargeTimer = 0.4f; 
                 isAttacking = false;
             }
         } break;
 
         case ATTACK:
             if (chargeTimer > 0) {
-                position.x += sinf(GetTime() * 30.0f) * 0.03f;
+                position.x += sinf(GetTime() * 30.0f) * 0.05f;
             } else {
                 Vector3 lungeDir = Vector3Normalize(Vector3Subtract(playerPos, position));
-                position = Vector3Add(position, Vector3Scale(lungeDir, speed * 2.0f * dt));
+                position = Vector3Add(position, Vector3Scale(lungeDir, speed * 2.5f * dt));
                 if (!isAttacking && Vector3Distance(position, playerPos) < 1.2f) {
-                    player.TakeDamage(8.0f); 
+                    player.TakeDamage(15.0f); 
                     isAttacking = true;
                     audioManager.PlaySFX("enemy_attack", position);
                 }
-                if (chargeTimer < -0.4f) { 
+                if (chargeTimer < -0.3f) { 
                     state = CHASE;
                     chargeTimer = chargeCooldown;
-                    stateTimer = 1.5f;
                 }
             }
             break;
@@ -244,24 +248,14 @@ void Whisperer::Draw() {
         return;
     }
     Color color = (flashTimer > 0) ? WHITE : ((doubtMeter < maxDoubt / 2) ? LIME : DARKGREEN);
-    if (state == ATTACK) color = YELLOW;
-    
     DrawCylinder(position, radius, radius * 0.8f, 1.5f, 8, color);
     DrawSphere(Vector3Add(position, {0, 0.8f, 0}), 0.3f, color);
     DrawSphereWires(Vector3Add(position, {0, 0.8f, 0}), 0.3f, 6, 6, BLACK);
 
     Vector3 shoulderL = Vector3Add(position, {0.3f, 0.8f, 0});
-    Vector3 shoulderR = Vector3Subtract(position, {0.3f, -0.8f, 0});
-    shoulderR = Vector3Add(position, {-0.3f, 0.8f, 0});
-
+    Vector3 shoulderR = Vector3Add(position, {-0.3f, 0.8f, 0});
     DrawCylinderEx(shoulderL, Vector3Add(shoulderL, {0, -0.6f, 0.2f}), 0.08f, 0.05f, 4, color);
     DrawCylinderEx(shoulderR, Vector3Add(shoulderR, {0, -0.6f, 0.2f}), 0.08f, 0.05f, 4, color);
-
-    for (int i=0; i<3; i++) {
-        Vector3 trailPos = Vector3Subtract(position, Vector3Scale(velocity, 0.1f * (i+1)));
-        trailPos.y += 0.5f + (i * 0.2f);
-        DrawSphereWires(trailPos, 0.3f - (i * 0.08f), 4, 4, Fade(color, 0.3f));
-    }
 
     Vector3 meterPos = Vector3Add(position, (Vector3){0.0f, 2.0f, 0.0f});
     DrawCube(meterPos, 1.0f, 0.1f, 0.1f, BLACK);
@@ -273,7 +267,7 @@ void Whisperer::Draw() {
 // ---------------------------------------------------------------------------------------------
 
 TemptationBeast::TemptationBeast(Vector3 startPos, AudioManager& am)
-    : Enemy(startPos, 200.0f, 4.5f, 20.0f, 1.5f, am) { 
+    : Enemy(startPos, 250.0f, 5.5f, 25.0f, 1.5f, am) { 
     chargeWindup = 0.0f;
     chargeDuration = 0.0f;
     state = IDLE;
@@ -310,24 +304,24 @@ void TemptationBeast::Update(float dt, Player& player, LevelManager& levelManage
         case CHASE: {
             Vector3 dir = Vector3Normalize(toPlayer);
             position = Vector3Add(position, Vector3Scale(dir, speed * dt));
-            if (dist < 8.0f) { state = ATTACK; chargeWindup = 2.0f; isAttacking = false; }
+            if (dist < 10.0f) { state = ATTACK; chargeWindup = 1.5f; isAttacking = false; }
         } break;
         case ATTACK: {
             if (chargeWindup > 0) {
                 chargeWindup -= dt;
-                Vector3 predictedPos = Vector3Add(playerPos, Vector3Scale(player.velocity, 0.3f));
+                Vector3 predictedPos = Vector3Add(playerPos, Vector3Scale(player.velocity, 0.4f));
                 chargeDir = Vector3Normalize(Vector3Subtract(predictedPos, position));
                 position.x += sinf(GetTime() * 40.0f) * 0.1f * dt;
-                if (chargeWindup <= 0) { chargeDuration = 1.5f; audioManager.PlaySFX("enemy_attack", position); }
+                if (chargeWindup <= 0) { chargeDuration = 1.2f; audioManager.PlaySFX("enemy_attack", position); }
             } else if (chargeDuration > 0) {
                 chargeDuration -= dt;
-                position = Vector3Add(position, Vector3Scale(chargeDir, speed * 3.5f * dt)); 
+                position = Vector3Add(position, Vector3Scale(chargeDir, speed * 4.0f * dt)); 
                 if (!isAttacking && dist < (radius + 1.2f)) {
-                    player.TakeDamage(20.0f); 
+                    player.TakeDamage(25.0f); 
                     isAttacking = true;
                     particleSystem.Emit(playerPos, 20, RED, GRAY, 0.5f, 1.0f, 0.3f, 0.6f, (Vector3){-2, 2, -2}, (Vector3){2, 4, 2});
                 }
-            } else { state = CHASE; stateTimer = 3.0f; }
+            } else { state = CHASE; stateTimer = 2.0f; }
         } break;
         default: break;
     }
@@ -340,140 +334,104 @@ void TemptationBeast::Draw() {
         DrawCubeWires(position, 3.0f, 3.0f, 3.0f, Fade(GOLD, alpha));
         return;
     }
-
     Color color = (flashTimer > 0) ? WHITE : ((doubtMeter < maxDoubt / 2) ? PINK : MAROON);
     if (state == ATTACK && chargeWindup > 0) {
         float pulse = (sinf(GetTime() * 15.0f) + 1.0f) / 2.0f;
         color = ColorLerp(MAROON, RED, pulse);
     }
-
-    DrawCube(position, 3.0f, 3.0f, 3.0f, color);
-    DrawCubeWires(position, 3.0f, 3.0f, 3.0f, BLACK);
-    
+    DrawCube(position, 3.0f, 2.0f, 3.0f, color);
+    DrawCubeWires(position, 3.0f, 2.0f, 3.0f, BLACK);
     DrawCylinderEx(Vector3Add(position, {1.0f, 1.0f, 1.0f}), Vector3Add(position, {1.5f, 2.0f, 1.5f}), 0.2f, 0.05f, 6, GRAY);
     DrawCylinderEx(Vector3Add(position, {-1.0f, 1.0f, 1.0f}), Vector3Add(position, {-1.5f, 2.0f, 1.5f}), 0.2f, 0.05f, 6, GRAY);
-
     Vector3 meterPos = Vector3Add(position, (Vector3){0.0f, 2.5f, 0.0f});
     DrawCube(meterPos, 2.0f, 0.2f, 0.1f, BLACK);
     DrawCube((Vector3){meterPos.x - (2.0f - (2.0f * (doubtMeter/maxDoubt))) / 2.0f, meterPos.y, meterPos.z}, (2.0f * (doubtMeter/maxDoubt)), 0.15f, 0.15f, RED);
 }
 
 // ---------------------------------------------------------------------------------------------
-// Boss Implementation (Pride, Despair, Death)
+// Boss Implementation
 // ---------------------------------------------------------------------------------------------
 
 Boss::Boss(Vector3 startPos, BossType bossType, AudioManager& am)
-    : Enemy(startPos, 500.0f, 3.0f, 50.0f, 3.0f, am) { 
+    : Enemy(startPos, 500.0f, 3.5f, 50.0f, 3.0f, am) { 
     type = bossType;
     phase = 1;
     actionTimer = 2.0f;
     summonTimer = 5.0f;
-    
-    if (type == PRIDE) { maxDoubt = 500.0f; speed = 3.0f; }
-    else if (type == DESPAIR) { maxDoubt = 750.0f; speed = 4.0f; radius = 4.0f; }
-    else if (type == DEATH) { maxDoubt = 1000.0f; speed = 6.0f; radius = 2.0f; }
-    
+    if (type == PRIDE) { maxDoubt = 600.0f; speed = 3.5f; }
+    else if (type == DESPAIR) { maxDoubt = 800.0f; speed = 4.5f; radius = 4.0f; }
+    else if (type == DEATH) { maxDoubt = 1200.0f; speed = 7.0f; radius = 2.0f; }
     doubtMeter = maxDoubt;
     state = CHASE;
 }
 
 void Boss::Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) {
     if (flashTimer > 0) flashTimer -= dt; 
-    
     if (IsBanished()) {
         if (!isBanishing) {
             isBanishing = true;
             state = BANISHING;
-            banishTimer = 3.0f; // Epic banishment
+            banishTimer = 3.0f; 
             audioManager.PlaySFX("enemy_banished", position);
         }
     }
-
     if (state == BANISHING) {
         banishTimer -= dt;
         particleSystem.Emit(position, 20, GOLD, WHITE, 0.5f, 2.0f, 1.0f, 3.0f, (Vector3){-5, 0, -5}, (Vector3){5, 10, 5});
         if (banishTimer <= 0) state = BANISHED;
         return;
     }
-
     if (state == BANISHED) return;
-
     Vector3 playerPos = player.GetPosition();
     float dist = Vector3Distance(position, playerPos);
+    if (dist < (radius + player.radius)) player.TakeDamage(2.0f); 
 
-    // Collision
-    if (dist < (radius + player.radius)) {
-        player.TakeDamage(1.0f); // Contact damage
-        // Push player?
-    }
-
-    // Boss AI per type
     if (type == PRIDE) {
-        // Pride: Slow, summons minions, giant smash
-        position.y = 3.0f; // Floating giant
-        
+        position.y = 3.0f; 
         if (actionTimer > 0) actionTimer -= dt;
         else {
-            // Smash
-            if (dist < 10.0f) {
-                // AoE Smash
-                if (dist < 8.0f) player.TakeDamage(20.0f);
-                particleSystem.Emit(position, 50, DARKPURPLE, BLACK, 1.0f, 3.0f, 0.5f, 1.0f, (Vector3){-5, 0, -5}, (Vector3){5, 1, 5});
+            if (dist < 12.0f) {
+                if (dist < 10.0f) player.TakeDamage(25.0f);
+                particleSystem.Emit(position, 60, DARKPURPLE, BLACK, 1.0f, 4.0f, 0.5f, 1.2f, (Vector3){-6, 0, -6}, (Vector3){6, 1, 6});
                 audioManager.PlaySFX("enemy_attack", position);
-                actionTimer = 3.0f;
+                actionTimer = 2.5f;
             } else {
-                // Move closer
                 Vector3 dir = Vector3Normalize(Vector3Subtract(playerPos, position));
                 position = Vector3Add(position, Vector3Scale(dir, speed * dt));
             }
         }
-
         if (summonTimer > 0) summonTimer -= dt;
         else {
-            // Summon Whisperer
-            // In a real implementation we'd add to the enemies list via main or callbacks. 
-            // For now, simpler: Shoot projectiles that look like minions?
-            // Or just spawn projectiles.
-            Vector3 spawnOffset = { (float)GetRandomValue(-5,5), 0, (float)GetRandomValue(-5,5) };
-            levelManager.AddProjectile(Vector3Add(position, spawnOffset), Vector3Normalize(Vector3Subtract(playerPos, position)), 0.5f, 5.0f, false);
-            summonTimer = 8.0f;
+            Vector3 shootDir = Vector3Normalize(Vector3Subtract(playerPos, position));
+            levelManager.AddProjectile(position, Vector3Scale(shootDir, 20.0f), 0.6f, 5.0f, false);
+            summonTimer = 6.0f;
         }
-
     } else if (type == DESPAIR) {
-        // Despair: Cloud, shoots ring of projectiles
         position.y = 5.0f;
-        
         if (actionTimer > 0) actionTimer -= dt;
         else {
-            // Ring of fire
-            for (int i=0; i<8; i++) {
-                float angle = i * 45.0f * DEG2RAD;
-                Vector3 dir = { sinf(angle), -0.5f, cosf(angle) };
-                levelManager.AddProjectile(position, Vector3Scale(dir, 8.0f), 0.4f, 4.0f, false);
+            for (int i=0; i<12; i++) {
+                float angle = i * 30.0f * DEG2RAD;
+                Vector3 dir = { sinf(angle), -0.2f, cosf(angle) };
+                levelManager.AddProjectile(position, Vector3Scale(dir, 10.0f), 0.5f, 5.0f, false);
             }
             audioManager.PlaySFX("enemy_attack", position);
-            actionTimer = 2.5f;
+            actionTimer = 2.0f;
         }
-        
-        // Always drift towards player slowly
         Vector3 dir = Vector3Normalize(Vector3Subtract(playerPos, position));
         position = Vector3Add(position, Vector3Scale(dir, speed * dt));
-
     } else if (type == DEATH) {
-        // Death: Fast, aggressive charge, teleports?
-        // Simple charge logic for now
         if (state == CHASE) {
             Vector3 dir = Vector3Normalize(Vector3Subtract(playerPos, position));
             position = Vector3Add(position, Vector3Scale(dir, speed * dt));
-            if (dist < 8.0f) { state = ATTACK; actionTimer = 0.5f; }
+            if (dist < 10.0f) { state = ATTACK; actionTimer = 0.4f; }
         } else if (state == ATTACK) {
             actionTimer -= dt;
             if (actionTimer <= 0) {
-                // Dash
                 Vector3 dir = Vector3Normalize(Vector3Subtract(playerPos, position));
-                position = Vector3Add(position, Vector3Scale(dir, speed * 4.0f * dt));
-                if (dist < 3.0f) { player.TakeDamage(40.0f); state = CHASE; }
-                if (dist > 15.0f) state = CHASE;
+                position = Vector3Add(position, Vector3Scale(dir, speed * 5.0f * dt));
+                if (dist < 3.5f) { player.TakeDamage(50.0f); state = CHASE; }
+                if (dist > 20.0f) state = CHASE;
             }
         }
     }
@@ -486,38 +444,30 @@ void Boss::Draw() {
         DrawSphereWires(position, radius * (2.0f - alpha), 16, 16, Fade(GOLD, alpha));
         return;
     }
-
     Color color = (flashTimer > 0) ? WHITE : DARKGRAY;
     if (type == PRIDE) color = (flashTimer > 0) ? WHITE : PURPLE;
     if (type == DESPAIR) color = (flashTimer > 0) ? WHITE : DARKBLUE;
     if (type == DEATH) color = (flashTimer > 0) ? WHITE : BLACK;
-
-    // Boss Visuals
     if (type == PRIDE) {
-        // Giant Cylinder/Statue
-        DrawCylinder(position, radius, radius, 6.0f, 12, color);
-        DrawSphere(Vector3Add(position, {0, 6.5f, 0}), 2.0f, color); // Head
-        // Crown
-        DrawCylinderWires(Vector3Add(position, {0, 8.0f, 0}), 1.5f, 2.5f, 1.0f, 6, GOLD);
+        DrawCylinder(position, radius, radius, 6.0f, 8, color);
+        DrawSphere(Vector3Add(position, {0, 6.5f, 0}), 2.0f, color);
+        DrawCylinderWires(Vector3Add(position, {0, 3.8f, 0}), 1.0f, 1.5f, 0.8f, 6, GOLD);
     } else if (type == DESPAIR) {
-        // Cloud of spheres
-        DrawSphere(position, radius, Fade(color, 0.8f));
-        for(int i=0; i<5; i++) {
-            Vector3 orbPos = Vector3Add(position, {sinf(GetTime()+i)*3.0f, cosf(GetTime()+i)*2.0f, cosf(GetTime()*0.5f+i)*3.0f});
-            DrawSphere(orbPos, 1.5f, Fade(color, 0.6f));
+        DrawSphere(position, radius * 0.5f, Fade(color, 0.9f));
+        for(int i=0; i<12; i++) {
+            float t = GetTime() * 2.0f + i;
+            Vector3 orbPos = Vector3Add(position, {sinf(t)*3.5f, cosf(t*0.5f)*2.0f, cosf(t)*3.5f});
+            DrawCube(orbPos, 0.8f, 0.8f, 0.8f, Fade(SKYBLUE, 0.6f));
         }
     } else if (type == DEATH) {
-        // Jagged Reaper
-        DrawCube(position, 2.0f, 6.0f, 2.0f, color);
-        // Scythe?
-        Vector3 hand = Vector3Add(position, {2.0f, 3.0f, 1.0f});
-        DrawCylinderEx(hand, Vector3Add(hand, {0, 4.0f, 2.0f}), 0.2f, 0.2f, 4, GRAY); // Handle
-        DrawCylinderEx(Vector3Add(hand, {0, 4.0f, 2.0f}), Vector3Add(hand, {0, 3.0f, 4.0f}), 0.1f, 0.5f, 4, LIGHTGRAY); // Blade
+        DrawCylinder(Vector3Subtract(position, {0, 3.0f, 0}), 1.5f, 2.0f, 6.0f, 8, color);
+        DrawSphere(Vector3Add(position, {0, 2.5f, 0}), 1.2f, color);
+        Vector3 hand = Vector3Add(position, {1.5f, 1.0f, 1.0f});
+        DrawCylinderEx(hand, Vector3Add(hand, {0, 4.0f, 1.0f}), 0.1f, 0.1f, 4, GRAY);
+        Vector3 bladeBase = Vector3Add(hand, {0, 3.5f, 1.0f});
+        DrawCylinderEx(bladeBase, Vector3Add(bladeBase, {-1.5f, 0.5f, 0}), 0.1f, 0.4f, 4, LIGHTGRAY);
     }
-
-    // Huge Health Bar
     Vector3 meterPos = Vector3Add(position, (Vector3){0.0f, 8.0f, 0.0f});
-    if (type == DESPAIR) meterPos.y = 6.0f;
     DrawCube(meterPos, 5.0f, 0.5f, 0.1f, BLACK);
     DrawCube((Vector3){meterPos.x - (5.0f - (5.0f * (doubtMeter/maxDoubt))) / 2.0f, meterPos.y, meterPos.z}, (5.0f * (doubtMeter/maxDoubt)), 0.4f, 0.15f, RED);
 }

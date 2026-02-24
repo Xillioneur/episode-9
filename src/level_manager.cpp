@@ -16,9 +16,9 @@ LevelManager::LevelManager() {
     for (int i = 1; i <= 15; i++) {
         Level l = (Level)i;
         spawnPoints[l] = {0, 0.5f, 0};
-        if (i % 2 == 0) exitPoints[l] = {20.0f, 0, 50.0f};
-        else exitPoints[l] = {-20.0f, 0, 60.0f};
-        if (i % 5 == 0) exitPoints[l] = {0, 0, 40.0f}; 
+        float angle = (float)i * 0.8f;
+        float dist = 40.0f + (i * 4.0f);
+        exitPoints[l] = {sinf(angle) * 20.0f, 0, dist};
     }
 }
 
@@ -33,61 +33,41 @@ void LevelManager::GoToLevel(Level level) {
         currentLevelName = "Garden of Reflection";
         currentMissionType = WALK_OF_FAITH;
         currentLevelScriptures.push_back({"hub_1", "John 1:5 - The light shines in the darkness.", {15.0f, 1.0f, -10.0f}, false});
-        
-        // Static Hub Decorations
-        for(int i=0; i<20; i++) {
-            float a = i * 18.0f * DEG2RAD;
-            currentLevelDecorations.push_back({{cosf(a)*60, 0, sinf(a)*60}, 5.0f, 0.5f, 0}); // Type 0: Tree
+        for(int i=0; i<30; i++) {
+            float a = i * 12.0f * DEG2RAD;
+            currentLevelDecorations.push_back({{cosf(a)*65, 0, sinf(a)*65}, 6.0f, 0.6f, 0}); 
         }
     } else {
         int day = (int)level;
         currentLevelName = "Lenten Day " + std::to_string(day);
-        
         if (day == 5 || day == 10 || day == 15) currentMissionType = BOSS_TRIAL;
         else if (day % 4 == 1) currentMissionType = BANISH_DOUBT;
         else if (day % 4 == 2) currentMissionType = RESTORE_LIGHT;
         else currentMissionType = WALK_OF_FAITH;
 
-        std::string text = "A Sacred Verse reveals itself.";
-        if (day == 1) text = "Psalm 27:1 - The LORD is my light and my salvation.";
-        else if (day == 15) text = "Matthew 28:6 - He is not here: for he is risen!";
+        std::string text = "A Divine Revelation.";
+        if (day == 1) text = "Psalm 27:1 - The LORD is my light.";
+        else if (day == 15) text = "Victory: He is Risen!";
 
         if (currentMissionType == RESTORE_LIGHT) {
             requiredScriptures = 3;
             for(int i=0; i<3; i++) {
-                float x = (i == 0) ? 15 : ((i == 1) ? -15 : 0);
-                float z = (i == 2) ? 45 : 25;
-                currentLevelScriptures.push_back({"d"+std::to_string(day)+"_"+std::to_string(i), text, {x, 1.0f, z}, false});
+                float rx = (float)((i-1)*20);
+                float rz = 20.0f + (float)i*15.0f;
+                currentLevelScriptures.push_back({"d"+std::to_string(day)+"_"+std::to_string(i), text, {rx, 1.0f, rz}, false});
             }
         } else {
             requiredScriptures = 1;
-            currentLevelScriptures.push_back({"d"+std::to_string(day)+"_m", text, {0, 1.0f, 20.0f}, false});
+            currentLevelScriptures.push_back({"d"+std::to_string(day)+"_m", text, {0, 1.0f, 30.0f}, false});
         }
 
-        // Generate static level decorations based on day
-        float levelSize = 100.0f + (day * 5.0f);
-        if (day == 2) {
-            for(int x=-40; x<=40; x+=20) for(int z=10; z<=80; z+=20) 
-                currentLevelDecorations.push_back({{(float)x, 0, (float)z}, 8.0f, 1.5f, 2}); // Type 2: Pillar
+        // Static Decorations per Level
+        for (int i = 0; i < 8 + day; i++) {
+            float rx = sinf(i * 1.5f + day) * 30.0f;
+            float rz = cosf(i * 2.0f + day) * 30.0f + 40.0f;
+            currentLevelDecorations.push_back({{rx, 0, rz}, 3.0f + (i%5), 0.5f + (float)(i%3)*0.2f, 2});
         }
-        else if (day == 3) {
-            for(int i=0; i<40; i++) {
-                float rx = (float)GetRandomValue(-50, 50);
-                float rz = (float)GetRandomValue(10, 90);
-                currentLevelDecorations.push_back({{rx, 0, rz}, 4.0f, 0.2f, 0}); // Type 0: Tree
-            }
-        }
-        else if (day == 4) {
-            for(int i=0; i<20; i++) 
-                currentLevelDecorations.push_back({{(i%2==0?15.0f:-15.0f), 0, (float)i*5}, 10.0f, 0.1f, 1}); // Type 1: Crystal/Shard
-        }
-        else if (day == 6) {
-            for(int i=0; i<30; i++)
-                currentLevelDecorations.push_back({{(float)GetRandomValue(-60,60), 1, (float)GetRandomValue(10,90)}, 2.0f, 4.0f, 2});
-        }
-        // ... add more as needed for other days
     }
-
     for (auto& s : currentLevelScriptures) if (allFoundScriptureIDs.count(s.id)) s.found = true;
 }
 
@@ -119,37 +99,44 @@ void LevelManager::DrawCurrentLevel(Shader lightingShader, int lightPosLoc, int 
         SetShaderValue(lightingShader, viewPosLoc, (float*)&cameraPosition, SHADER_UNIFORM_VEC3);
 
         int day = (int)currentLevel;
-        float levelSize = 100.0f + (day * 5.0f);
-
         if (currentLevel == HUB) {
-            DrawCube({0, -0.5f, 0}, 200, 1, 200, DARKGREEN);
+            for(int x=-80; x<=80; x+=10) for(int z=-80; z<=80; z+=10) {
+                DrawCube({(float)x, -0.5f, (float)z}, 10, 1, 10, ((x+z)/10 % 2 == 0) ? DARKGREEN : GREEN);
+            }
             DrawCylinder(exitPoints[HUB], 2.0f, 2.0f, 4.0f, 16, PURPLE); 
         }
         else {
-            Color groundColor = ColorFromHSV((float)((day * 24) % 360), 0.6f, 0.4f);
+            Color ground = ColorFromHSV((float)((day * 24) % 360), 0.5f, 0.3f);
             
-            // Handcrafted visual specifics per day
+            // --- 15 UNIQUE HANDCRAFTED LAYOUTS ---
             switch(day) {
-                case 1: DrawCube({0, -0.5f, 40}, 40, 1, 100, MAROON); 
-                        DrawCube({-20, 5, 40}, 2, 10, 100, DARKGRAY);
-                        DrawCube({20, 5, 40}, 2, 10, 100, DARKGRAY);
-                        break;
-                case 11: for(int i=0; i<8; i++) DrawCube({sinf(i)*15, (float)i, (float)i*12}, 15, 1, 15, DARKPURPLE); break;
-                case 12: for(int i=0; i<20; i++) DrawCube({0, (float)i*0.5f, (float)i*4}, 20, 1, 5, WHITE); break;
-                default: DrawCube({0, -0.5f, levelSize/2}, levelSize, 1.0f, levelSize, groundColor); break;
+                case 1: DrawCube({0, -0.5f, 50}, 40, 1, 120, MAROON); break;
+                case 2: DrawCube({0, -0.5f, 50}, 100, 1, 100, DARKBLUE); break;
+                case 3: DrawCube({0, -0.5f, 50}, 120, 1, 120, DARKGREEN); break;
+                case 4: DrawCube({0, -0.5f, 50}, 60, 1, 150, SKYBLUE); break;
+                case 5: DrawCube({0, -0.5f, 30}, 100, 1, 100, PURPLE); break;
+                case 6: DrawCube({0, -0.5f, 60}, 150, 1, 150, GOLD); break;
+                case 7: DrawCube({0, -0.5f, 80}, 20, 1, 200, BLACK); break;
+                case 8: DrawCube({0, -0.5f, 40}, 100, 1, 100, DARKGRAY); break;
+                case 9: DrawCube({0, -0.5f, 50}, 120, 1, 120, BEIGE); break;
+                case 10: DrawCube({0, -0.5f, 30}, 150, 1, 150, BLUE); break;
+                case 11: for(int i=0; i<10; i++) DrawCube({0, (float)i*0.5f, (float)i*10}, 30, 1, 15, ground); break;
+                case 12: for(int i=0; i<10; i++) DrawCube({sinf(i)*20, (float)i*2, (float)i*15}, 20, 1, 20, ground); break;
+                case 13: DrawCube({0, -0.5f, 100}, 200, 1, 300, WHITE); break;
+                case 14: DrawCube({0, -0.5f, 100}, 50, 1, 400, GOLD); break;
+                case 15: DrawCube({0, -0.5f, 40}, 200, 1, 200, WHITE); break;
+                default: DrawCube({0, -0.5f, 50}, 100, 1, 100, ground); break;
             }
             DrawCylinder(exitPoints[currentLevel], 1.5f, 1.5f, 3.0f, 16, GOLD); 
         }
 
-        // Draw STORED Decorations (Static)
         for (const auto& d : currentLevelDecorations) {
-            if (d.type == 0) { // Tree
-                DrawCylinder(d.position, 0.2f, d.radius, d.height, 5, BROWN);
-                DrawSphere({d.position.x, d.height + 0.5f, d.position.z}, 1.5f, GREEN);
-            } else if (d.type == 1) { // Crystal
-                DrawCylinder(d.position, 0.1f, d.radius, d.height, 4, WHITE);
-            } else if (d.type == 2) { // Pillar
-                DrawCylinder(d.position, d.radius, d.radius, d.height, 8, GRAY);
+            if (d.type == 0) { 
+                DrawCylinder(d.position, 0.1f, d.radius, d.height, 6, BROWN);
+                DrawSphere({d.position.x, d.height, d.position.z}, d.radius*3.0f, DARKGREEN);
+            } else if (d.type == 2) { 
+                DrawCylinder(d.position, d.radius, d.radius, d.height, 8, LIGHTGRAY);
+                DrawCube({d.position.x, d.height, d.position.z}, d.radius*2.5f, 0.5f, d.radius*2.5f, GRAY);
             }
         }
 
@@ -157,13 +144,13 @@ void LevelManager::DrawCurrentLevel(Shader lightingShader, int lightPosLoc, int 
             if (!s.found) {
                 Vector3 p = s.position; p.y += sin(GetTime() * 2.0f) * 0.2f;
                 DrawSphere(p, 0.4f, GOLD);
-                DrawSphereWires(p, 0.4f, 8, 8, WHITE);
+                DrawSphereWires(p, 0.5f, 8, 8, WHITE);
             }
         }
         for (const auto& p : projectiles) {
             if (p.active) {
                 DrawSphere(p.position, p.radius, PURPLE);
-                DrawSphereWires(p.position, p.radius, 6, 6, BLACK);
+                DrawSphereWires(p.position, p.radius * 1.2f, 6, 6, WHITE);
             }
         }
     EndShaderMode();
