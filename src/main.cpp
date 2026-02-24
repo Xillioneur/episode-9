@@ -51,6 +51,14 @@ int main()
     SetShaderValue(lightingShader, ambientColorLoc, (float[4]){0.2f, 0.2f, 0.2f, 1.0f}, SHADER_UNIFORM_VEC4);
 
     Vector3 lightPosition = {0.0f, 10.0f, 0.0f};
+    
+    Camera3D titleCamera = { 0 };
+    titleCamera.position = (Vector3){ 40.0f, 20.0f, 40.0f };
+    titleCamera.target = (Vector3){ 0.0f, 2.0f, 0.0f };
+    titleCamera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+    titleCamera.fovy = 60.0f;
+    titleCamera.projection = CAMERA_PERSPECTIVE;
+
     DisableCursor();
     SetTargetFPS(60);
 
@@ -60,6 +68,12 @@ int main()
         {
             case TITLE:
             {
+                float time = GetTime();
+                titleCamera.position.x = sinf(time * 0.2f) * 50.0f;
+                titleCamera.position.z = cosf(time * 0.2f) * 50.0f;
+                titleCamera.position.y = 15.0f + sinf(time * 0.5f) * 5.0f;
+                titleCamera.target = (Vector3){ 0.0f, 5.0f, 0.0f }; 
+
                 if (IsKeyPressed(KEY_N)) {
                     InitializeNewGame(player, enemies, levelManager, audioManager, currentDay);
                     customCamera.InitCamera(player.GetPosition());
@@ -180,9 +194,16 @@ int main()
             ClearBackground(RAYWHITE);
             switch (currentScreen) {
                 case TITLE:
-                    DrawText("GLORY'S TRIUMPH 3D", 190, 100, 40, DARKBLUE);
-                    DrawText("Press N for New Game", 250, 200, 20, LIGHTGRAY);
-                    DrawText("Press L for Load Game", 250, 230, 20, LIGHTGRAY);
+                    BeginMode3D(titleCamera);
+                        SetShaderValue(lightingShader, lightPosLoc, (float*)&lightPosition, SHADER_UNIFORM_VEC3);
+                        SetShaderValue(lightingShader, viewPosLoc, (float*)&titleCamera.position, SHADER_UNIFORM_VEC3);
+                        levelManager.DrawCurrentLevel(lightingShader, lightPosLoc, viewPosLoc, lightPosition, titleCamera.position);
+                    EndMode3D();
+                    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.4f));
+                    DrawText("GLORY'S TRIUMPH 3D", GetScreenWidth()/2 - MeasureText("GLORY'S TRIUMPH 3D", 50)/2, 100, 50, GOLD);
+                    DrawText("LENTEN WARFARE", GetScreenWidth()/2 - MeasureText("LENTEN WARFARE", 30)/2, 160, 30, WHITE);
+                    DrawText("Press N for New Game", GetScreenWidth()/2 - MeasureText("Press N for New Game", 20)/2, 300, 20, LIGHTGRAY);
+                    DrawText("Press L for Load Game", GetScreenWidth()/2 - MeasureText("Press L for Load Game", 20)/2, 330, 20, LIGHTGRAY);
                     break;
                 case GAMEPLAY:
                 case GAMEOVER:
@@ -195,6 +216,9 @@ int main()
                             player.Draw(customCamera);
                             for (auto& enemy : enemies) enemy->Draw();
                         EndShaderMode();
+                        // Draw unlit elements (Health bars) outside shader mode
+                        for (auto& enemy : enemies) enemy->DrawHealthBar(customCamera.camera.position);
+                        
                         particleSystem.Draw();
                         DrawSphere(lightPosition, 0.5f, YELLOW);
                         glorySystem.Draw(customCamera);
@@ -217,8 +241,6 @@ int main()
 void LoadLevelEnemies(Level level, std::vector<std::unique_ptr<Enemy>>& enemies, AudioManager& audioManager, int currentDay, MissionType type) {
     enemies.clear();
     if (level == HUB) {
-        // --- Hub Sentinels Logic ---
-        // Day 7, 14, 15 are Safe Havens. All others have PLENTY of enemies.
         bool isSafeHaven = (currentDay == 7 || currentDay == 14 || currentDay == 15);
         if (!isSafeHaven) {
             int hubEnemyCount = 4 + currentDay; 

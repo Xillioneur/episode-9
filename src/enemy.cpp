@@ -5,6 +5,7 @@
 #include "player.h"        
 #include "level_manager.h"
 #include "particles3d.h" 
+#include "rlgl.h"
 
 // Enemy base class constructor
 Enemy::Enemy(Vector3 startPos, float initialDoubt, float moveSpeed, float range, float rad, AudioManager& am)
@@ -23,6 +24,7 @@ Enemy::Enemy(Vector3 startPos, float initialDoubt, float moveSpeed, float range,
     banishTimer = 0.0f;
     isBanishing = false;
     stateTimer = 0.0f;
+    collisionCooldown = 0.0f;
 }
 
 void Enemy::TakeGloryHit(float damage) {
@@ -41,25 +43,61 @@ bool Enemy::ReadyToRemove() {
 }
 
 void Enemy::HandlePlayerCollision(Player& player, float dt) {
+    if (collisionCooldown > 0) return; 
+
     Vector3 playerPos = player.GetPosition();
     Vector3 toPlayer = Vector3Subtract(playerPos, position);
     float dist = Vector3Length(toPlayer);
     float combinedRadius = radius + player.radius;
 
-    if (dist < combinedRadius + 0.3f) {
+    if (dist < combinedRadius + 0.2f) {
         Vector3 pushDir = Vector3Normalize(toPlayer);
         if (Vector3LengthSqr(pushDir) < 0.001f) pushDir = {0, 0, 1};
         
-        float overlap = (combinedRadius + 0.3f) - dist;
-        player.SetPosition(Vector3Add(playerPos, Vector3Scale(pushDir, overlap)));
+        float overlap = (combinedRadius + 0.2f) - dist;
+        player.SetPosition(Vector3Add(playerPos, Vector3Scale(pushDir, overlap * 0.5f)));
+        position = Vector3Subtract(position, Vector3Scale(pushDir, overlap * 0.5f));
         
         player.velocity = Vector3Add(player.velocity, Vector3Scale(pushDir, 30.0f));
         player.knockbackTimer = 0.4f;
         
-        if (dist < combinedRadius) {
-            player.TakeDamage(10.0f * dt * 60.0f); 
-        }
+        collisionCooldown = 1.0f; 
+        
+        player.TakeDamage(10.0f);
+        audioManager.PlaySFX("enemy_attack", position);
     }
+}
+
+void Enemy::DrawHealthBar(Vector3 cameraPos) {
+    if (state == BANISHED || state == BANISHING) return;
+
+    // Fixed Billboard-style health bar above enemy
+    float heightOffset = radius + 1.5f;
+    Vector3 barPos = Vector3Add(position, (Vector3){0, heightOffset, 0});
+    
+    // LookAt math for billboard
+    Vector3 look = Vector3Normalize(Vector3Subtract(cameraPos, barPos));
+    Vector3 right = Vector3Normalize(Vector3CrossProduct((Vector3){0, 1, 0}, look));
+    
+    float barWidth = (maxDoubt > 500) ? 4.0f : 1.5f; // Bigger for bosses
+    float barHeight = (maxDoubt > 500) ? 0.4f : 0.15f;
+    float ratio = doubtMeter / maxDoubt;
+
+    rlPushMatrix();
+    rlTranslatef(barPos.x, barPos.y, barPos.z);
+    
+    // Face the camera manually using the look/right vectors
+    float angle = atan2f(look.x, look.z) * RAD2DEG;
+    rlRotatef(angle, 0, 1, 0);
+
+    // Border (Divine Gold)
+    DrawRectanglePro((Rectangle){ -barWidth/2 - 0.05f, -barHeight/2 - 0.05f, barWidth + 0.1f, barHeight + 0.1f }, (Vector2){0,0}, 0, GOLD);
+    // Background (Dark)
+    DrawRectanglePro((Rectangle){ -barWidth/2, -barHeight/2, barWidth, barHeight }, (Vector2){0,0}, 0, BLACK);
+    // Health (Red - anchored left)
+    DrawRectanglePro((Rectangle){ -barWidth/2, -barHeight/2, barWidth * ratio, barHeight }, (Vector2){0,0}, 0, RED);
+    
+    rlPopMatrix();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -79,6 +117,7 @@ ShadowDrone::ShadowDrone(Vector3 startPos, AudioManager& am)
 void ShadowDrone::Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) {
     if (flashTimer > 0) flashTimer -= dt; 
     if (stateTimer > 0) stateTimer -= dt;
+    if (collisionCooldown > 0) collisionCooldown -= dt;
 
     if (IsBanished()) {
         if (!isBanishing) { isBanishing = true; state = BANISHING; banishTimer = 1.0f; audioManager.PlaySFX("enemy_banished", position); }
@@ -114,7 +153,6 @@ void ShadowDrone::Update(float dt, Player& player, LevelManager& levelManager, P
             if (dist < detectionRange) { state = CHASE; stateTimer = 2.0f; }
             break;
         case CHASE: {
-            // Variation based on spawn position
             float offset = (spawnPosition.x + spawnPosition.z) * 0.5f;
             float angle = (float)GetTime() * 0.5f + offset;
             Vector3 targetPos = { playerPos.x + cosf(angle) * 12.0f, droneHeight, playerPos.z + sinf(angle) * 12.0f };
@@ -146,9 +184,6 @@ void ShadowDrone::Draw() {
     float wingOffset = sinf(GetTime() * 15.0f) * 0.2f;
     DrawCube(Vector3Add(position, {0.6f, wingOffset, 0}), 0.8f, 0.1f, 0.4f, color);
     DrawCube(Vector3Subtract(position, {0.6f, -wingOffset, 0}), 0.8f, 0.1f, 0.4f, color);
-    Vector3 meterPos = Vector3Add(position, (Vector3){0.0f, radius + 0.3f, 0.0f});
-    DrawCube(meterPos, 1.0f, 0.1f, 0.1f, BLACK);
-    DrawCube((Vector3){meterPos.x - (1.0f - (doubtMeter/maxDoubt)) / 2.0f, meterPos.y, meterPos.z}, (doubtMeter/maxDoubt), 0.08f, 0.08f, RED);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -165,6 +200,8 @@ Whisperer::Whisperer(Vector3 startPos, AudioManager& am)
 void Whisperer::Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) {
     if (flashTimer > 0) flashTimer -= dt; 
     if (stateTimer > 0) stateTimer -= dt;
+    if (collisionCooldown > 0) collisionCooldown -= dt;
+
     if (IsBanished()) {
         if (!isBanishing) { isBanishing = true; state = BANISHING; banishTimer = 1.0f; audioManager.PlaySFX("enemy_banished", position); }
     }
@@ -190,21 +227,28 @@ void Whisperer::Update(float dt, Player& player, LevelManager& levelManager, Par
     switch (state) {
         case IDLE: if (dist2D < detectionRange) { state = CHASE; stateTimer = 1.0f; } break;
         case CHASE: {
-            if (dist2D > 3.5f) {
+            if (collisionCooldown <= 0 && dist2D > 3.5f) {
                 Vector3 toP = Vector3Normalize(Vector3Subtract(playerPos, position));
                 Vector3 right = Vector3CrossProduct(toP, {0, 1, 0});
                 float side = (spawnPosition.x > 0) ? 1.0f : -1.0f;
                 Vector3 targetDir = Vector3Add(toP, Vector3Scale(right, side * 1.5f));
                 position = Vector3Add(position, Vector3Scale(Vector3Normalize(targetDir), speed * dt));
+            } else if (collisionCooldown > 0) {
+                Vector3 away = Vector3Normalize(Vector3Subtract(position, playerPos));
+                position = Vector3Add(position, Vector3Scale(away, speed * 0.5f * dt));
             }
-            if (dist2D < 6.0f && chargeTimer <= 0) { state = ATTACK; chargeTimer = 0.35f; isAttacking = false; }
+            if (dist2D < 6.0f && chargeTimer <= 0 && collisionCooldown <= 0) { state = ATTACK; chargeTimer = 0.35f; isAttacking = false; }
         } break;
         case ATTACK:
             if (chargeTimer > 0) { position.x += sinf(GetTime() * 40.0f) * 0.08f; }
             else {
                 Vector3 lungeDir = Vector3Normalize(Vector3Subtract(playerPos, position));
                 position = Vector3Add(position, Vector3Scale(lungeDir, speed * 2.8f * dt));
-                if (!isAttacking && Vector3Distance(position, playerPos) < 1.5f) { player.TakeDamage(18.0f); isAttacking = true; audioManager.PlaySFX("enemy_attack", position); }
+                if (!isAttacking && Vector3Distance(position, playerPos) < 1.5f) { 
+                    player.TakeDamage(18.0f); isAttacking = true; audioManager.PlaySFX("enemy_attack", position); 
+                    collisionCooldown = 1.2f; 
+                    state = CHASE;
+                }
                 if (chargeTimer < -0.35f) { state = CHASE; chargeTimer = chargeCooldown; }
             }
             break;
@@ -223,9 +267,6 @@ void Whisperer::Draw() {
     Vector3 shoulderR = Vector3Add(position, {-0.3f, 0.8f, 0});
     DrawCylinderEx(shoulderL, Vector3Add(shoulderL, {0, -0.6f, 0.2f}), 0.08f, 0.05f, 4, color);
     DrawCylinderEx(shoulderR, Vector3Add(shoulderR, {0, -0.6f, 0.2f}), 0.08f, 0.05f, 4, color);
-    Vector3 meterPos = Vector3Add(position, (Vector3){0.0f, 2.0f, 0.0f});
-    DrawCube(meterPos, 1.0f, 0.1f, 0.1f, BLACK);
-    DrawCube((Vector3){meterPos.x - (1.0f - (doubtMeter/maxDoubt)) / 2.0f, meterPos.y, meterPos.z}, (doubtMeter/maxDoubt), 0.08f, 0.08f, RED);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -241,6 +282,7 @@ TemptationBeast::TemptationBeast(Vector3 startPos, AudioManager& am)
 
 void TemptationBeast::Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) {
     if (flashTimer > 0) flashTimer -= dt; 
+    if (collisionCooldown > 0) collisionCooldown -= dt;
     if (IsBanished()) {
         if (!isBanishing) { isBanishing = true; state = BANISHING; banishTimer = 1.5f; audioManager.PlaySFX("enemy_banished", position); }
     }
@@ -260,11 +302,14 @@ void TemptationBeast::Update(float dt, Player& player, LevelManager& levelManage
     switch (state) {
         case IDLE: if (dist < detectionRange) state = CHASE; break;
         case CHASE: {
-            if (dist > 4.5f) {
-                Vector3 dir = Vector3Normalize(toPlayer);
+            if (collisionCooldown <= 0 && dist > 4.5f) {
+                Vector3 dir = Vector3Normalize(Vector3Subtract(playerPos, position));
                 position = Vector3Add(position, Vector3Scale(dir, speed * dt));
+            } else if (collisionCooldown > 0) {
+                Vector3 away = Vector3Normalize(Vector3Subtract(position, playerPos));
+                position = Vector3Add(position, Vector3Scale(away, speed * 0.3f * dt));
             }
-            if (dist < 12.0f) { state = ATTACK; chargeWindup = 1.2f; isAttacking = false; }
+            if (dist < 12.0f && collisionCooldown <= 0) { state = ATTACK; chargeWindup = 1.2f; isAttacking = false; }
         } break;
         case ATTACK: {
             if (chargeWindup > 0) {
@@ -276,7 +321,11 @@ void TemptationBeast::Update(float dt, Player& player, LevelManager& levelManage
             } else if (chargeDuration > 0) {
                 chargeDuration -= dt;
                 position = Vector3Add(position, Vector3Scale(chargeDir, speed * 4.5f * dt)); 
-                if (!isAttacking && dist < (radius + 1.5f)) { player.TakeDamage(35.0f); isAttacking = true; }
+                if (!isAttacking && dist < (radius + 1.5f)) { 
+                    player.TakeDamage(35.0f); isAttacking = true; 
+                    collisionCooldown = 1.5f; 
+                    state = CHASE;
+                }
             } else { state = CHASE; stateTimer = 2.0f; }
         } break;
         default: break;
@@ -292,9 +341,6 @@ void TemptationBeast::Draw() {
     DrawCubeWires(position, 3.0f, 2.0f, 3.0f, BLACK);
     DrawCylinderEx(Vector3Add(position, {1.0f, 1.0f, 1.0f}), Vector3Add(position, {1.5f, 2.0f, 1.5f}), 0.2f, 0.05f, 6, GRAY);
     DrawCylinderEx(Vector3Add(position, {-1.0f, 1.0f, 1.0f}), Vector3Add(position, {-1.5f, 2.0f, 1.5f}), 0.2f, 0.05f, 6, GRAY);
-    Vector3 meterPos = Vector3Add(position, (Vector3){0.0f, 2.5f, 0.0f});
-    DrawCube(meterPos, 2.0f, 0.2f, 0.1f, BLACK);
-    DrawCube((Vector3){meterPos.x - (2.0f - (2.0f * (doubtMeter/maxDoubt))) / 2.0f, meterPos.y, meterPos.z}, (2.0f * (doubtMeter/maxDoubt)), 0.15f, 0.15f, RED);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -312,6 +358,7 @@ Boss::Boss(Vector3 startPos, BossType bossType, AudioManager& am)
 
 void Boss::Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) {
     if (flashTimer > 0) flashTimer -= dt; 
+    if (collisionCooldown > 0) collisionCooldown -= dt;
     if (IsBanished()) {
         if (!isBanishing) { isBanishing = true; state = BANISHING; banishTimer = 3.0f; audioManager.PlaySFX("enemy_banished", position); }
     }
@@ -381,7 +428,4 @@ void Boss::Draw() {
         DrawCylinderEx(hand, Vector3Add(hand, {0, 6.0f, 1.5f}), 0.15f, 0.15f, 4, GRAY);
         Vector3 bb = Vector3Add(hand, {0, 5.5f, 1.5f}); DrawCylinderEx(bb, Vector3Add(bb, {-2.5f, 1.0f, 0}), 0.1f, 0.6f, 4, LIGHTGRAY);
     }
-    Vector3 mp = Vector3Add(position, (Vector3){0.0f, 10.0f, 0.0f});
-    DrawCube(mp, 8.0f, 0.8f, 0.1f, BLACK);
-    DrawCube((Vector3){mp.x - (8.0f - (8.0f * (doubtMeter/maxDoubt))) / 2.0f, mp.y, mp.z}, (8.0f * (doubtMeter/maxDoubt)), 0.7f, 0.15f, RED);
 }

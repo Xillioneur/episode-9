@@ -39,6 +39,7 @@ public:
     bool isBanishing;
 
     float stateTimer; // For AI decision making
+    float collisionCooldown; // Prevent continuous pushing/sticking
 
     // Constructor
     Enemy(Vector3 startPos, float initialDoubt, float moveSpeed, float range, float rad, AudioManager& am);
@@ -49,6 +50,7 @@ public:
     // Pure virtual methods to be implemented by derived classes
     virtual void Update(float dt, Player& player, LevelManager& levelManager, ParticleSystem& particleSystem) = 0;
     virtual void Draw() = 0;
+    void DrawHealthBar(Vector3 cameraPos); // New method for accurate, unlit health bars
 
     // Common methods
     void TakeGloryHit(float damage);

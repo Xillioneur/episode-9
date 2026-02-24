@@ -1,6 +1,8 @@
 #include "ui.h"
 #include "raylib.h"
+#include "rlgl.h"
 #include <string>
+#include <cmath>
 
 HUD::HUD() {
     scripturePopupTimer = 0.0f;
@@ -68,10 +70,35 @@ void HUD::Draw(float playerFaith, float playerMaxFaith,
     // --- Crosshair (Center) ---
     int centerX = GetScreenWidth() / 2;
     int centerY = GetScreenHeight() / 2;
-    int crosshairSize = 10;
-    DrawCircle(centerX, centerY, 3, Fade(GOLD, 0.6f));
-    DrawLine(centerX - crosshairSize, centerY, centerX + crosshairSize, centerY, Fade(WHITE, 0.4f));
-    DrawLine(centerX, centerY - crosshairSize, centerX, centerY + crosshairSize, Fade(WHITE, 0.4f));
+    float time = (float)GetTime();
+    
+    // Pulse effect
+    float pulse = sinf(time * 4.0f) * 2.0f;
+    float rotation = time * 90.0f; // Degrees per second
+
+    // Draw Shadows/Outlines for contrast
+    DrawCircle(centerX + 1, centerY + 1, 3, BLACK);
+    
+    // Rotating outer diamond (Divine geometry)
+    rlPushMatrix();
+    rlTranslatef((float)centerX, (float)centerY, 0);
+    rlRotatef(rotation, 0, 0, 1);
+    DrawRectangleLinesEx((Rectangle){ -8 - pulse/2, -8 - pulse/2, 16 + pulse, 16 + pulse }, 1.5f, Fade(GOLD, 0.4f));
+    rlPopMatrix();
+
+    // The Winged Cross
+    int wingLen = 12;
+    int wingOffset = 4;
+    // Horizontal wings
+    DrawLineEx((Vector2){ (float)centerX - wingLen - wingOffset, (float)centerY }, (Vector2){ (float)centerX - wingOffset, (float)centerY }, 2.0f, WHITE);
+    DrawLineEx((Vector2){ (float)centerX + wingOffset, (float)centerY }, (Vector2){ (float)centerX + wingLen + wingOffset, (float)centerY }, 2.0f, WHITE);
+    // Vertical wings
+    DrawLineEx((Vector2){ (float)centerX, (float)centerY - wingLen - wingOffset }, (Vector2){ (float)centerX, (float)centerY - wingOffset }, 2.0f, WHITE);
+    DrawLineEx((Vector2){ (float)centerX, (float)centerY + wingOffset }, (Vector2){ (float)centerX, (float)centerY + wingLen + wingOffset }, 2.0f, WHITE);
+
+    // Inner Glow
+    DrawCircle(centerX, centerY, 3.5f + pulse/4.0f, GOLD);
+    DrawCircle(centerX, centerY, 1.5f, WHITE);
 }
 
 void HUD::DrawGameOver() {
