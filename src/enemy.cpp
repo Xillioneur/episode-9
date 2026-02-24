@@ -41,14 +41,14 @@ bool Enemy::ReadyToRemove() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// ShadowDrone Implementation (Modified: Hitscan Beam)
+// ShadowDrone Implementation (Fixed: Aggressive Shooting)
 // ---------------------------------------------------------------------------------------------
 
 ShadowDrone::ShadowDrone(Vector3 startPos, AudioManager& am)
     : Enemy(startPos, 100.0f, 8.0f, 20.0f, 0.5f, am) { 
     hoverAmplitude = 0.5f;
     hoverSpeed = 2.0f;
-    attackRange = 15.0f; 
+    attackRange = 15.0f; // Range to shoot
     state = IDLE; 
     shootCooldown = 2.0f; 
     shootTimer = 0.0f;
@@ -82,25 +82,27 @@ void ShadowDrone::Update(float dt, Player& player, LevelManager& levelManager, P
 
     if (dist < (radius + player.radius)) {
         Vector3 push = Vector3Normalize(Vector3Subtract(position, playerPos));
-        position = Vector3Add(position, Vector3Scale(push, (radius + player.radius) - dist));
+        if (Vector3LengthSqr(push) < 0.001f) push = (Vector3){0, 1, 0}; 
+        float overlap = (radius + player.radius) - dist;
+        position = Vector3Add(position, Vector3Scale(push, overlap));
+        toPlayer = Vector3Subtract(playerPos, position);
+        dist = Vector3Length(toPlayer);
     }
 
-    // Hitscan Beam Logic
+    // --- Aggressive Shooting Logic ---
     if (shootTimer > 0) shootTimer -= dt;
-    if (dist < detectionRange && shootTimer <= 0) {
-        // Particle charge effect
-        particleSystem.Emit(position, 5, RED, ORANGE, 0.1f, 0.2f, 0.1f, 0.3f, (Vector3){-0.5f,-0.5f,-0.5f}, (Vector3){0.5f,0.5f,0.5f});
-        
-        if (shootTimer < -0.5f) { // 0.5s windup
+
+    // Detect player and shoot
+    if (dist < detectionRange) {
+        if (shootTimer <= 0) {
+            // FIRE!
             Vector3 shootDir = Vector3Normalize(toPlayer);
-            Ray ray = { position, shootDir };
-            RayCollision col = GetRayCollisionSphere(ray, playerPos, player.radius);
-            if (col.hit && col.distance < detectionRange) {
-                player.TakeDamage(12.0f);
-                for(float i=0; i<col.distance; i+=1.0f) {
-                    particleSystem.Emit(Vector3Add(position, Vector3Scale(shootDir, i)), 1, RED, YELLOW, 0.1f, 0.2f, 0.1f, 0.2f, (Vector3){0,0,0}, (Vector3){0,0,0});
-                }
-            }
+            // Multi-projectile spread or just fast shots
+            levelManager.AddProjectile(position, Vector3Scale(shootDir, 15.0f), 0.25f, 4.0f, false);
+            
+            // Visual feedback
+            particleSystem.Emit(position, 10, RED, ORANGE, 0.1f, 0.3f, 0.2f, 0.5f, (Vector3){-1,-1,-1}, (Vector3){1,1,1});
+            
             shootTimer = shootCooldown;
             audioManager.PlaySFX("enemy_attack", position);
         }
@@ -117,19 +119,24 @@ void ShadowDrone::Update(float dt, Player& player, LevelManager& levelManager, P
         case CHASE: {
             Vector3 targetPos = { playerPos.x, targetHeight, playerPos.z };
             Vector3 moveDir = Vector3Normalize(Vector3Subtract(targetPos, position));
-            moveDir = Vector3Add(moveDir, Vector3Scale(Vector3CrossProduct(moveDir, {0,1,0}), sinf(GetTime()*2)*0.5f));
+            // Slight oscillation
+            moveDir = Vector3Add(moveDir, Vector3Scale(Vector3CrossProduct(moveDir, {0,1,0}), sinf(GetTime()*3)*0.3f));
             position = Vector3Add(position, Vector3Scale(Vector3Normalize(moveDir), speed * dt));
-            if (dist < 10.0f) { state = ATTACK; stateTimer = 3.0f; }
+            if (dist < 10.0f) { state = ATTACK; stateTimer = 4.0f; }
         } break;
 
         case ATTACK: {
             Vector3 dir = Vector3Normalize(toPlayer);
             Vector3 right = Vector3CrossProduct(dir, (Vector3){0, 1, 0});
-            Vector3 moveVec = Vector3Scale(right, speed * 0.8f * dt);
+            // Strafe faster during attack
+            Vector3 moveVec = Vector3Scale(right, speed * 1.2f * dt * (sinf(GetTime()*0.5f) > 0 ? 1 : -1));
+            
             if (dist > 12.0f) moveVec = Vector3Add(moveVec, Vector3Scale(dir, speed * 0.5f * dt));
             if (dist < 8.0f) moveVec = Vector3Subtract(moveVec, Vector3Scale(dir, speed * 0.5f * dt));
+            
             position = Vector3Add(position, moveVec);
-            position.y = (playerPos.y + 4.0f) + sinf(GetTime() * 2.0f) * 1.0f;
+            position.y = Lerp(position.y, targetHeight + sinf(GetTime() * 2.0f) * 0.5f, 2.0f * dt);
+            
             if (stateTimer <= 0) state = CHASE;
         } break;
         default: break;
@@ -196,6 +203,7 @@ void Whisperer::Update(float dt, Player& player, LevelManager& levelManager, Par
 
     if (dist2D < (radius + player.radius) && fabsf(playerPos.y - position.y) < 1.0f) {
         Vector2 push = Vector2Normalize(Vector2Subtract(pos2D, pPos2D));
+        if (Vector2LengthSqr(push) < 0.001f) push = (Vector2){1, 0};
         position.x += push.x * ((radius + player.radius) - dist2D);
         position.z += push.y * ((radius + player.radius) - dist2D);
     }
@@ -295,7 +303,9 @@ void TemptationBeast::Update(float dt, Player& player, LevelManager& levelManage
     float dist = Vector3Length(toPlayer);
     if (dist < (radius + player.radius)) {
         Vector3 push = Vector3Normalize(Vector3Subtract(position, playerPos));
-        position = Vector3Add(position, Vector3Scale(push, (radius + player.radius) - dist));
+        if (Vector3LengthSqr(push) < 0.001f) push = (Vector3){0, 1, 0}; 
+        float overlap = (radius + player.radius) - dist;
+        position = Vector3Add(position, Vector3Scale(push, overlap));
     }
     if (position.y > 1.5f) position.y -= 20.0f * dt;
     if (position.y < 1.5f) position.y = 1.5f;
